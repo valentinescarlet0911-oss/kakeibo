@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Kakeibo 家計簿</title>
+<meta name="theme-color" content="#12302A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="Kakeibo">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kakeibo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" id="manifestLink">
+<style>
+  :root{
+    color-scheme:dark;
+    --mint:#35C6A6; --mint-d:#2AA089; --mint-l:#12302A;
+    --ink:#E8EDEB; --sub:#8A9995; --line:#2A322F; --bg:#0E1413;
+    --card:#171F1D; --card2:#1F2926; --field:#101917;
+    --red:#F0736F; --blue:#5A9BE0; --amber:#E7B44D; --purple:#9B72CF;
+    --shadow:0 4px 16px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",Roboto,sans-serif;
+    background:#050807; color:var(--ink); font-size:15px; line-height:1.5; display:flex; justify-content:center; overscroll-behavior:none;}
+  #app{width:100%; max-width:460px; background:var(--bg); height:100vh; height:100dvh; display:flex; flex-direction:column; position:relative; box-shadow:0 0 50px rgba(0,0,0,.6); overflow:hidden;}
+  header{background:linear-gradient(180deg,#14201D,#101715); padding:14px 18px 12px; flex:0 0 auto; border-bottom:1px solid var(--line); z-index:5;}
+  header .title{font-size:17px; font-weight:800; letter-spacing:.02em; color:var(--mint);}
+  header .sub{font-size:12px; color:var(--sub); margin-top:2px; display:flex; justify-content:space-between;}
+  main{flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px 15px 100px;}
+  .screen{display:none;} .screen.active{display:block; animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  nav{flex:0 0 auto; position:absolute; left:0; right:0; bottom:0; display:flex; background:#0C1211; border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom,0); z-index:10;}
+  nav button{flex:1; border:0; background:none; padding:9px 0 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--sub); font-size:10px; transition:color .15s;}
+  nav button svg{width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+  nav button.on{color:var(--mint); font-weight:700;}
+  .card{background:var(--card); border-radius:16px; padding:15px; box-shadow:var(--shadow); margin-bottom:13px; border:1px solid var(--line);}
+  .card h3{margin:0 0 10px; font-size:13.5px; color:var(--sub); font-weight:700; display:flex; justify-content:space-between; align-items:center; gap:6px;}
+  .card h3 .tag{font-size:10px; background:var(--mint-l); color:var(--mint); padding:2px 7px; border-radius:6px;}
+  .muted{color:var(--sub);} .r{color:var(--red);} .g{color:var(--mint);} .b{color:var(--blue);} .am{color:var(--amber);}
+  .amt{font-variant-numeric:tabular-nums; font-weight:700;}
+  .big{font-size:30px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .mid{font-size:22px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .mswitch{display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:7px 6px; margin-bottom:13px;}
+  .mswitch button{border:0; background:var(--card2); color:var(--mint); width:36px; height:36px; border-radius:10px; font-size:18px; font-weight:800; cursor:pointer;}
+  .mswitch .lbl{font-weight:800; font-size:16px;}
+  .row2{display:flex; justify-content:space-between; align-items:baseline; padding:5px 0; font-size:14px; border-bottom:1px dashed var(--line);}
+  .row2:last-child{border-bottom:0;}
+  .row2 .lab{color:var(--sub); font-size:13px;}
+  .tx{display:flex; align-items:center; gap:11px; background:var(--card); border:1px solid var(--line); padding:11px 13px; border-radius:12px; margin-bottom:6px; box-shadow:var(--shadow); cursor:pointer; transition:transform .08s;}
+  .tx:active{transform:scale(.985);}
+  .tx .ic{width:36px; height:36px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:17px; flex:0 0 auto; background:var(--card2);}
+  .tx .mm{flex:1; min-width:0;}
+  .tx .mm .c{font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .tx .mm .s{font-size:11.5px; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .tx .val{font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap; font-size:14px;}
+  .badge{font-size:9px; padding:1px 6px; border-radius:6px; margin-left:6px; font-weight:700; vertical-align:middle;}
+  .badge.fix{background:#2a2416; color:var(--amber);}
+  .badge.cat{background:var(--mint-l); color:var(--mint);}
+  .daylab{font-size:12px; color:var(--sub); font-weight:700; padding:10px 4px 4px;}
+  .legend{margin-top:10px;}
+  .legend .lr{padding:6px 2px; border-bottom:1px solid var(--line); font-size:13px;}
+  .legend .lr:last-child{border-bottom:0;}
+  .legend .lhead{display:flex; align-items:center; gap:9px; cursor:pointer;}
+  .legend .dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto;}
+  .legend .nm{flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;} .legend .pc{color:var(--sub); width:40px; text-align:right; font-size:12px;}
+  .legend .vv{font-weight:700; width:82px; text-align:right; font-variant-numeric:tabular-nums;}
+  .legend .detail{padding:4px 0 6px 20px; display:none;}
+  .legend .detail.open{display:block;}
+  .legend .di{display:flex; justify-content:space-between; font-size:11.5px; color:var(--sub); padding:2px 0;}
+  .field{display:flex; align-items:center; gap:8px; margin:8px 0;}
+  .field label{width:82px; font-size:13px; color:var(--sub); flex:0 0 auto;}
+  .field select,.field input{flex:1; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:14px; background:var(--field); color:var(--ink);}
+  .btn{display:block; width:100%; border:0; border-radius:12px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; text-align:center;}
+  .btn-primary{background:var(--mint); color:#06120F; box-shadow:0 4px 14px rgba(53,198,166,.3);}
+  .btn-ghost{background:var(--card2); color:var(--ink); border:1px solid var(--line); margin-top:9px;}
+  .btn-danger{background:#2A1A1A; color:var(--red); border:1px solid #4a2a2a; margin-top:9px;}
+  .sub-tabs{display:flex; background:var(--card2); border-radius:12px; padding:4px; margin-bottom:13px;}
+  .sub-tabs button{flex:1; border:0; background:none; padding:8px 0; border-radius:9px; font-weight:700; color:var(--sub); cursor:pointer; font-size:13px;}
+  .sub-tabs button.on{background:var(--mint); color:#06120F;}
+  .stat{display:flex; justify-content:space-between; padding:6px 0; font-size:13.5px; border-bottom:1px dashed var(--line);}
+  .stat:last-child{border-bottom:0;}
+  .pill{display:inline-block; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--card2); color:var(--sub); border:1px solid var(--line); margin:0 4px 4px 0;}
+  .empty{text-align:center; color:var(--sub); padding:36px 20px; font-size:14px;}
+  .empty .e{font-size:38px; margin-bottom:8px; opacity:.7;}
+  #toast{position:absolute; left:50%; bottom:86px; transform:translateX(-50%) translateY(20px); background:#EAF2F0; color:#0C1211; padding:10px 18px; border-radius:999px; font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:.25s; z-index:60; max-width:90%; text-align:center;}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .modal-bg{position:absolute; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; z-index:40;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--card); border:1px solid var(--line); width:100%; border-radius:20px 20px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom,0)); animation:up .22s ease; max-height:90%; overflow-y:auto;}
+  @keyframes up{from{transform:translateY(100%);}to{transform:none;}}
+  .modal h3{margin:0 0 12px; color:var(--ink); font-size:16px;}
+  .chip{display:inline-block; padding:8px 12px; margin:0 6px 6px 0; border:1px solid var(--line); border-radius:10px; background:var(--card2); cursor:pointer; font-size:13px;}
+  .fixedit{padding:2px 9px; font-size:11px; border:1px solid var(--mint); border-radius:11px; background:transparent; color:var(--mint); cursor:pointer; white-space:nowrap;}
+  .chip.on{background:var(--mint); color:#06120F; border-color:var(--mint); font-weight:700;}
+  .note{font-size:11.5px; color:var(--sub); line-height:1.6; margin-top:6px;}
+  textarea{width:100%;height:110px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--field);color:var(--ink);font-size:12px;font-family:ui-monospace,monospace;}
+  .switch{display:flex;align-items:center;gap:10px;font-size:14px;margin:8px 0;cursor:pointer;}
+  .switch input{width:20px;height:20px;accent-color:var(--mint);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title">Kakeibo 家計簿</div>
+    <div class="sub"><span id="hdConn">読み込み中…</span><span id="hdVer"></span></div>
+  </header>
+  <main>
+    <!-- 1: 明細一覧 -->
+    <section class="screen" id="s-list">
+      <div class="mswitch"><button id="lPrev">‹</button><div class="lbl" id="lMonth">—</div><button id="lNext">›</button></div>
+      <div class="card" id="lSummary"></div>
+      <div id="lBody"></div>
+    </section>
+
+    <!-- 2: 預金管理 -->
+    <section class="screen" id="s-deposit">
+      <div class="mswitch"><button id="dPrev">‹</button><div class="lbl" id="dMonth">—</div><button id="dNext">›</button></div>
+      <div id="depBody"></div>
+    </section>
+
+    <!-- 3: 固定費管理 -->
+    <section class="screen" id="s-fixed">
+      <div id="fixBody"></div>
+    </section>
+
+    <!-- 4: 分析 -->
+    <section class="screen" id="s-ana">
+      <div class="field"><label>対象期間</label><select id="anaSel"></select></div>
+      <div class="field"><label>カテゴリー</label><select id="anaCatSel"></select></div>
+      <div id="anaBody"></div>
+    </section>
+
+    <!-- 5: データ / 設定 -->
+    <section class="screen" id="s-settings">
+      <div class="card" style="border:1px solid var(--mint)">
+        <h3>🔗 スプレッドシート連携（元データ）</h3>
+        <div id="sheetStatus" class="note">—</div>
+        <div class="field"><label>Web App URL</label><input id="sheetsUrl" placeholder="https://script.google.com/…/exec"></div>
+        <button class="btn btn-primary" id="reloadBtn">今すぐ最新に更新</button>
+        <button class="btn btn-ghost" id="saveUrlBtn">このURLを保存</button>
+        <button class="btn btn-primary" id="installBtn" style="display:none;margin-top:9px">📲 ホーム画面にアプリを追加</button>
+        <div id="pwaState" class="note" style="margin-top:8px"></div>
+        <div id="diagBox" class="note" style="margin-top:10px"></div>
+      </div>
+      <div class="card" style="border:1px solid var(--blue)">
+        <h3>☁️ 設定の同期（全端末で共有）</h3>
+        <p class="note" style="margin-top:0">カテゴリ・固定費・給与・借入・初期残高などの手動編集を、スプシの「設定」タブ経由で全端末に共有します。取引明細は元々スプシで共有されています。</p>
+        <div id="syncState" class="note"></div>
+        <button class="btn btn-primary" id="syncNowBtn" style="margin-top:8px">設定を今すぐ同期</button>
+        <details style="margin-top:10px"><summary class="note" style="cursor:pointer">▶ GASコード（初回のみスプシに貼り付け／統合版）</summary>
+          <p class="note">「拡張機能 → Apps Script」を開き、<b>既存の doGet / doPost を含むコード全体を、この統合版に置き換え</b>てください（既存の「取引データ返却・JSONP・明細追記」機能はそのまま温存されます）→ デプロイを新バージョンで更新。同じ /exec URL のまま使えます。</p>
+          <textarea id="gasCode" readonly style="height:180px"></textarea>
+          <button class="btn btn-ghost" id="copyGas" style="margin-top:6px">GASコードをコピー</button>
+        </details>
+      </div>
+      <div class="card">
+        <h3>⚙️ 初期設定残高（起点日時点）</h3>
+        <div class="field"><label>筑波</label><input id="obT" type="number" inputmode="numeric"></div>
+        <div class="field"><label>ゆうちょ</label><input id="obY" type="number" inputmode="numeric"></div>
+        <div class="field"><label>楽天</label><input id="obR" type="number" inputmode="numeric"></div>
+        <div class="field"><label>起点日</label><input id="obFrom" type="date"></div>
+        <div class="field"><label>貯金口座</label><select id="savAcct"></select></div>
+        <button class="btn btn-primary" id="obSave">保存</button>
+      </div>
+      <div class="card">
+        <h3>🔁 収支の除外はマスタ（スプシ）基準</h3>
+        <p class="note" style="margin-top:0">口座間振込・ATM現金・カード一括引落などの「収支に含めない」判定は、スプシの「集計の設定」列（マスタ）に一元化しています。ツールはそれに従って表示し、口座残高は集計フラグに関わらず全ての資金移動を反映します（＝実残高と一致）。</p>
+      </div>
+      <div class="card">
+        <h3>🗂 集計に含まないデータ（マスタ蓄積）</h3>
+        <p class="note" style="margin-top:0">スプシで「集計に含めない」の明細（ATM現金引出・預入、オリコ、電子マネーチャージ、口座間振込、カード一括引落等）はここに表示され、収支集計からは除外されます（口座残高には反映）。</p>
+        <div id="excludedBox"></div>
+      </div>
+      <div class="card">
+        <h3>📥 CSV貼付 / サンプル（オフライン用）</h3>
+        <textarea id="csvText" placeholder="日付,方法,カテゴリ,カテゴリの内訳,支払元,入金先,品目,メモ,お店,通貨,収入,支出,振替,残高調整,通貨変換前の金額,集計の設定"></textarea>
+        <button class="btn btn-primary" id="csvLoad" style="margin-top:8px">この内容で読み込む</button>
+        <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none">
+        <button class="btn btn-ghost" id="csvFileBtn">CSVファイルを選択</button>
+        <button class="btn btn-ghost" id="csvSample">サンプルデータで試す</button>
+      </div>
+      <div class="card">
+        <h3>💾 バックアップ / 初期化</h3>
+        <button class="btn btn-ghost" id="exportBtn">JSONで書き出し</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
+        <button class="btn btn-ghost" id="importBtn">JSONを読み込み</button>
+        <button class="btn btn-danger" id="clearAll">この端末の表示と手動編集を消去</button>
+      </div>
+    </section>
+  </main>
+  <nav id="nav"></nav>
+  <div id="toast"></div>
+  <div class="modal-bg" id="modalBg"><div class="modal" id="modalBox"></div></div>
+</div>
+<script>
+"use strict";
+/* ======================================================================
+   Kakeibo 再設計版 / 単一ファイル・依存ゼロ
+   4ページ構成: 明細一覧 / 預金管理 / 固定費管理 / 分析 (+ データ設定)
+   計算層は検証済みロジック（残高・Dカードサイクル・自己振込除外）を継承
+   ====================================================================== */
+const KEY="kakeibo_v3";
+const APP_VERSION="v20 (固定費1回あたり額の修正)";
+let DIAG={status:"未実行"};
+const DEFAULT_SHEET_URL="https://script.google.com/macros/s/AKfycbzsWDw6gmqdiisKQJv_x44U3kSIZICG_jpLHYXgwvxJuVki_C_d1IaSqGZSdNdoLzMj-g/exec";
+const DEFAULT_OPENING={ "筑波":455634, "ゆうちょ":416519, "楽天":0, "現金":0, "_from":"2026-04-02" };  // 4/1終値アンカー（実残高と1円一致を確認済み）
+
+let store={
+  _raw:[],
+  opening:Object.assign({},DEFAULT_OPENING),
+  catRules:{},        // 店キー -> カテゴリ（手動・過去未来全体に反映）
+  fixRules:{},        // 店キー -> 固定費(true/false)（手動・全体反映）
+  customCats:[],       // ユーザー追加カテゴリ
+  incomes:{},          // "YYYY-MM" -> {h,w,c}
+  loans:{},            // 店キー -> 借入総額
+  savingsAcct:"ゆうちょ",
+  cashManual:0,        // 現金残高（手動編集。ATM実態が不明なため）
+  sheetsUrl:"",
+  excludeSelfTransfer:true,
+  settingsUpdatedAt:0,   // 手動設定の最終更新（端末間の新旧比較用）
+  settingsDirty:false,   // 未送信の変更があるか（スマホ取りこぼし再送用）
+  settingsSyncedAt:0     // 最後にスプシと同期できた時刻
+};
+/* スプシの「設定」タブで全端末共有する項目（sheetsUrlは端末ごとなので含めない） */
+const SYNC_KEYS=["catRules","fixRules","customCats","incomes","loans","savingsAcct","cashManual","opening","excludeSelfTransfer"];
+
+/* ---------- 永続化（try/catchガード） ---------- */
+function saveLocal(){ try{localStorage.setItem(KEY,JSON.stringify(store));}catch(e){} }
+function save(){ saveLocal(); }
+function loadLocal(){ try{const r=localStorage.getItem(KEY); if(r) store=Object.assign(store,JSON.parse(r));}catch(e){} }
+
+/* ---------- ユーティリティ ---------- */
+const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
+const $=s=>document.querySelector(s);
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function dayMs(s){return new Date(s+"T00:00:00").getTime();}
+function ymLabel(s){const [y,m]=s.split("-");return y+"年"+(+m)+"月";}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+/* スプシの金額を忠実に数値化。数値型はそのまま、文字列はカンマ/通貨記号を除いて小数も正しく解釈。
+   （旧実装は小数点を除去して 366.5→3665 のように桁がずれる不具合があった） */
+function toNum(v){ if(v==null||v==="") return 0; if(typeof v==="number") return Math.round(v);
+  let s=String(v).trim().replace(/[,，]/g,"").replace(/[−ー]/g,"-").replace(/[^0-9.\-]/g,"");
+  const n=parseFloat(s); return isNaN(n)?0:Math.round(n); }
+function normDate(v){ if(v==null) return ""; let s=String(v).trim();
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(iso) return iso[1]+"-"+iso[2]+"-"+iso[3];
+  const m=s.match(/^(\d{4})[\/\.\-](\d{1,2})[\/\.\-](\d{1,2})/); if(m) return m[1]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[3]).padStart(2,"0");
+  return s.slice(0,10); }
+function addMonths(ymStr,n){ const [y,m]=ymStr.split("-").map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+function lastDayOf(mk){ const [y,m]=mk.split("-").map(Number); const d=new Date(y,m,0); return mk+"-"+String(d.getDate()).padStart(2,"0"); }
+function monthMeta(mk){ const [y,m]=mk.split("-").map(Number); const last=new Date(y,m,0).getDate(); const t=todayStr(); const isCur=t.slice(0,7)===mk; const isFuture=mk>t.slice(0,7); const elapsed=isCur?+t.slice(8,10):(isFuture?0:last); return {last,isCur,isFuture,elapsed,remain:last-elapsed}; }
+
+/* ---------- CSV / 取り込み ---------- */
+function decodeBuffer(buf){ const bytes=new Uint8Array(buf); let sjis="",utf8="";
+  try{ sjis=new TextDecoder("shift-jis",{fatal:false}).decode(bytes); }catch(e){}
+  try{ utf8=new TextDecoder("utf-8",{fatal:false}).decode(bytes); }catch(e){}
+  const bad=t=>(t.match(/\uFFFD/g)||[]).length; const hasJP=t=>/[぀-ヿ一-鿿]/.test(t);
+  if(sjis && bad(sjis)<=bad(utf8) && hasJP(sjis)) return sjis; if(utf8 && hasJP(utf8)) return utf8; return sjis||utf8; }
+function splitCSVLine(line){ const out=[];let cur="",q=false;
+  for(let i=0;i<line.length;i++){const c=line[i];
+    if(c==='"'){ if(q&&line[i+1]==='"'){cur+='"';i++;} else q=!q; }
+    else if(c===","&&!q){ out.push(cur);cur=""; } else cur+=c; }
+  out.push(cur);return out.map(s=>s.trim()); }
+function mapRows(header, rows){
+  const norm=header.map(h=>String(h==null?"":h).replace(/\s/g,""));
+  const low=norm.map(h=>h.toLowerCase()); const idx=n=>norm.indexOf(n); const idxi=n=>low.indexOf(String(n).toLowerCase()); const S=x=>x==null?"":String(x).trim();
+  const isApp=(idxi("amount")>=0&&idxi("date")>=0)&&(idxi("type")>=0||idxi("account")>=0||idxi("toaccount")>=0);
+  const isZaim=idx("方法")>=0&&idx("収入")>=0&&idx("支出")>=0; const raw=[];
+  for(const c of rows){ if(!c||c.length<2) continue;
+    if(isApp){ const g=n=>{const k=idxi(n);return k>=0?S(c[k]):"";};
+      const rawType=g("type").toLowerCase(); const isInc=/income|収入|給与|給料|賞与/.test(rawType); const type=isInc?"income":"expense";
+      const amt=toNum(g("amount")); const acc=g("account"), toAcc=g("toaccount");
+      const incl=g("included").toLowerCase(); const agg=(incl==="false"||incl==="0"||incl==="集計に含めない")?"集計に含めない":"常に集計に含める";
+      raw.push({date:normDate(g("date")),method:isInc?"income":"payment",cat:g("category"),sub:g("subcategory"),from:isInc?"-":(acc||"-"),to:isInc?(acc||"-"):(toAcc||"-"),memo:g("memo"),store:g("store"),inc:isInc?amt:0,exp:isInc?0:amt,agg}); continue; }
+    if(isZaim){ raw.push({date:normDate(c[idx("日付")]),method:S(c[idx("方法")]),cat:S(c[idx("カテゴリ")]),sub:S(c[idx("カテゴリの内訳")]),from:S(c[idx("支払元")]),to:S(c[idx("入金先")]),memo:S(c[idx("メモ")])||S(c[idx("品目")]),store:S(c[idx("お店")]),inc:toNum(c[idx("収入")]),exp:toNum(c[idx("支出")]),agg:S(c[idx("集計の設定")])}); }
+    else{ const di=idx("日付")>=0?idx("日付"):0,ai=idx("口座名")>=0?idx("口座名"):(idx("口座")>=0?idx("口座"):1),mi=idx("摘要")>=0?idx("摘要"):(idx("メモ")>=0?idx("メモ"):2),oi=idx("出金額")>=0?idx("出金額"):(idx("支出")>=0?idx("支出"):3),ii=idx("入金額")>=0?idx("入金額"):(idx("収入")>=0?idx("収入"):4);
+      const outv=toNum(c[oi]),inv=toNum(c[ii]); raw.push({date:normDate(c[di]),method:outv>0?"payment":"income",cat:"",sub:"",from:outv>0?(S(c[ai])||"-"):"-",to:inv>0?(S(c[ai])||"-"):"-",memo:S(c[mi]),store:S(c[mi]),inc:inv,exp:outv,agg:"常に集計に含める"}); } }
+  return {rows:raw,isZaim,isApp};
+}
+function parseCSV(text){ const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/).filter(l=>l.trim().length); if(!lines.length) return {rows:[]};
+  const header=splitCSVLine(lines[0]); return mapRows(header, lines.slice(1).map(splitCSVLine)); }
+function findHeaderRow(values){ for(let i=0;i<Math.min(values.length,8);i++){ const row=(values[i]||[]).map(x=>String(x==null?"":x).replace(/\s/g,"").toLowerCase()); const has=k=>row.indexOf(k)>=0;
+  if((has("日付")||has("date"))&&(has("方法")||has("支出")||has("収入")||has("type")||has("amount"))) return i; } return 0; }
+
+/* 重複除去つきで生行を取り込む（重複の整地） */
+/* マスタ（スプシ）の全行を忠実に反映する。同日同額の正当な明細（ATM手数料が同日2件など）を
+   重複として消すと残高がズレるため、重複除去は行わない。日付の無い無効行のみ除外。 */
+function tidyRows(rawRows){ const out=(rawRows||[]).filter(r=>r&&r.date); return {rows:out, dup:(rawRows?rawRows.length:0)-out.length}; }
+function loadRawRows(rows){ const {rows:clean,dup}=tidyRows(rows); store._raw=clean; invalidateCaches(); save(); toast(clean.length+"件読込（重複"+dup+"件を整地）"); rebuildMonths(); renderAll(); }
+function loadCSVText(t){ if(!t||!t.trim()){toast("CSVが空です");return;} const {rows}=parseCSV(t); if(!rows.length){toast("読み込める明細がありません");return;} loadRawRows(rows); }
+async function handleFile(file){ try{ const buf=await file.arrayBuffer(); const {rows}=parseCSV(decodeBuffer(buf)); loadRawRows(rows); }catch(err){ console.error(err); toast("読み込み失敗: "+err.message); } }
+
+/* ---------- スプシ通信 ---------- */
+function effectiveSheetUrl(){ return (store.sheetsUrl&&store.sheetsUrl.trim())||DEFAULT_SHEET_URL; }
+function fetchViaJsonp(url,timeoutMs){ return new Promise((resolve,reject)=>{ const cb="__kk_cb_"+Date.now().toString(36)+Math.floor(Math.random()*1e6); const sep=url.includes("?")?"&":"?"; const src=url+sep+"callback="+cb+"&t="+Date.now(); const s=document.createElement("script"); let done=false;
+  const cleanup=()=>{ try{delete window[cb];}catch(e){window[cb]=undefined;} if(s.parentNode)s.parentNode.removeChild(s); clearTimeout(timer); };
+  const timer=setTimeout(()=>{ if(done)return; done=true; cleanup(); reject(new Error("JSONPタイムアウト")); },timeoutMs||20000);
+  window[cb]=(data)=>{ if(done)return; done=true; cleanup(); resolve(data); };
+  s.onerror=()=>{ if(done)return; done=true; cleanup(); reject(new Error("JSONP読込失敗")); }; s.src=src; (document.head||document.documentElement).appendChild(s); }); }
+async function getSheetData(url){ const u=(url||"").trim(); if(!u) throw new Error("URL未設定"); const bust=u+(u.includes("?")?"&":"?")+"nocache="+Date.now();
+  try{ let res; if(typeof AbortController!=="undefined"){ const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),15000); res=await fetch(bust,{method:"GET",redirect:"follow",cache:"no-store",signal:ctrl.signal}); clearTimeout(to);} else { res=await fetch(bust,{method:"GET",redirect:"follow",cache:"no-store"}); }
+    if(!res.ok) throw new Error("GET "+res.status); let data; try{data=await res.json();}catch(e){throw new Error("JSON以外の応答");} DIAG.transport="fetch"; return data;
+  }catch(e1){ try{ const data=await fetchViaJsonp(u,20000); DIAG.transport="jsonp"; return data; }catch(e2){ throw new Error("通信失敗 fetch:["+(e1&&e1.message||e1)+"] / jsonp:["+(e2&&e2.message||e2)+"]"); } } }
+let _loadedOnce=false;
+async function loadFromSheet(silent){ const url=effectiveSheetUrl(); if(!url){ setConn("off"); return false; } if(!silent) setConn("loading"); DIAG.status="読込中…";
+  try{ const data=await getSheetData(url); const values=data.values||data.rows||[]; if(!values.length) throw new Error("空データ");
+    const hi=findHeaderRow(values); const mapped=mapRows(values[hi],values.slice(hi+1)); const {rows:clean,dup}=tidyRows(mapped.rows);
+    store._raw=clean; invalidateCaches();
+    const gasHasSettings=!!(data && data.settings);
+    adoptRemoteSettings(data);   // スプシ「設定」タブが新しければ手動設定を採用（全端末共有）
+    if(store.settingsDirty && gasHasSettings) pushSettings();   // 未反映の自端末変更があれば再送（スマホでの取りこぼし対策）
+    DIAG={status:"読込成功 ✓",rows:mapped.rows.length,dup,header:(values[hi]||[]).join(", "),format:mapped.isApp?"アプリ形式":(mapped.isZaim?"Zaim形式":"簡易/推定"),transport:DIAG.transport,error:null,settings:(gasHasSettings?"あり":"なし(GAS未更新?)")};
+    if(!gasHasSettings) setSync("nogas");
+    saveLocal(); setConn("ok",clean.length); if(!_loadedOnce){ _loadedOnce=true; rebuildMonths(); } rebuildMonths(); renderAll();
+    if(!silent) toast(clean.length+"件を読込（重複"+dup+"件を整地）"); return true;
+  }catch(e){ console.error(e); DIAG={status:"読込失敗 ✗",error:String(e&&e.message||e)}; setConn("error"); renderSettings(); if(!silent) toast("スプシ読込に失敗: "+DIAG.error); return false; } }
+function startAutoSync(){ if(!effectiveSheetUrl()) return; document.addEventListener("visibilitychange",()=>{ if(!document.hidden) loadFromSheet(true); }); window.addEventListener("focus",()=>loadFromSheet(true)); setInterval(()=>{ if(!document.hidden) loadFromSheet(true); },90000); }
+function setConn(state,n){ const el=$("#sheetStatus"); const hd=$("#hdConn"); const m={loading:"読み込み中…",ok:"接続OK ("+(n||0)+"件)",error:"接続エラー（設定を確認）",off:"未接続"}[state]||state; if(el) el.textContent=m; if(hd) hd.textContent=m; }
+
+/* ================= 設定同期（スプシ「設定」タブ ⇔ アプリ） =================
+   取引明細は元々スプシで共有。ここでは手動編集(カテゴリ/固定費/給与/借入/初期残高/自己振込)を
+   スプシの「設定」タブに保存し、全端末で共有する。最終更新時刻で新旧を判定（last-write-wins）。
+   スマホでもPOSTが確実に通るよう no-cors 送信＋dirtyフラグで、次回の引き込みで反映を確認する。 */
+let syncStatus="idle", __pushTimer=null;
+function setSync(s){ syncStatus=s; if(cur==="settings") renderSyncCard(); }
+function collectSettings(){ const o={}; SYNC_KEYS.forEach(k=>{ o[k]=store[k]; }); return o; }
+// 手動設定が変わったら呼ぶ：更新時刻を進め、未同期(dirty)にして遅延プッシュ
+function markSettingsChanged(){ store.settingsUpdatedAt=Date.now(); store.settingsDirty=true; saveLocal(); clearTimeout(__pushTimer); __pushTimer=setTimeout(pushSettings,800); }
+// スプシの設定が自端末より新しければ採用。自分の送信が反映されていれば dirty を解消。
+function adoptRemoteSettings(data){
+  if(!data||!data.settings) return false;
+  const rua=Number(data.settingsUpdatedAt)||0; let changed=false;
+  if(rua>(store.settingsUpdatedAt||0)){
+    SYNC_KEYS.forEach(k=>{ if(data.settings[k]!==undefined && data.settings[k]!==null) store[k]=data.settings[k]; });
+    store.settingsUpdatedAt=rua; changed=true; invalidateCaches();
+  }
+  if(rua>=(store.settingsUpdatedAt||0)){   // スプシが自端末の更新に追いついた＝反映済み
+    store.settingsDirty=false; store.settingsSyncedAt=Date.now(); setSync("ok");
+  }
+  saveLocal(); return changed;
+}
+// 自端末の設定をスプシへ書き戻す（doPost）。no-cors のため応答は読めないが書込みは実行される。
+async function pushSettings(){
+  const url=effectiveSheetUrl(); if(!url){ setSync("off"); return; }
+  setSync("pushing");
+  try{
+    await fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({settings:collectSettings(),updatedAt:store.settingsUpdatedAt})});
+    setSync("sent");   // 送信済み。反映確認は次回の引き込み(adoptRemoteSettings)で行う
+    saveLocal();
+  }catch(e){ setSync("error"); }
+}
+// 手動で「今すぐ同期」（書き戻し→引き込みで確認）
+async function syncNow(){ await pushSettings(); await new Promise(r=>setTimeout(r,1500)); await loadFromSheet(false); if(cur==="settings") renderSettings(); toast(store.settingsDirty?"送信しました（反映確認中／自動で再確認します）":"同期しました"); }
+
+/* ======================================================================
+   計算層（すべて store._raw から。残高と消費は別物）
+   ====================================================================== */
+function isDCard(name){ return /d\s*カード|ｄ\s*カード|dcard/i.test((name||"")); }
+function acctIsBankRaw(name){ return /銀行|ゆうちょ|bank/i.test(name||"") && !isDCard(name); }
+function isDcardSettle(r){ return acctIsBankRaw(r.from) && /ドコモ|d\s*カード|ｄ\s*カード/i.test(r.store||"") && !/オリコ/.test(r.store||""); }
+function acctKey(a){ if(/筑波|つくば/.test(a)) return "筑波"; if(/ゆうちょ|郵便/.test(a)) return "ゆうちょ"; if(/楽天/.test(a)) return "楽天"; if(isDCard(a)) return "dカード"; return a; }
+/* ATM現金：引出（現金の引出）と預入（現金預入）を区別 */
+function isATMout(r){ const s=(r.store||"")+" "+(r.cat||"")+" "+(r.sub||"")+" "+(r.memo||""); return /現金の引出|現金引出|ATM.*引出|ＡＴＭ.*引出|引出.*現金/.test(s); }
+function isATMin(r){ const s=(r.store||"")+" "+(r.cat||"")+" "+(r.sub||"")+" "+(r.memo||""); return /現金預入|現金の預入|ATM.*預入|ＡＴＭ.*預入|預入.*現金/.test(s); }
+function _cashRaw(r){ return isATMout(r); }   // 後方互換
+function _oricoRaw(r){ return /オリコ/.test((r.store||"")+" "+(r.memo||"")); }
+function openingOf(key){ const o=store.opening||{}; if(key==="筑波"||key==="つくば") return Number(o["筑波"]||o["つくば"]||0); return Number(o[key]||0); }
+function openFromOf(){ return (store.opening&&store.opening["_from"])||""; }
+function accountsInData(){ const s=new Set(); (store._raw||[]).forEach(r=>{ [r.from,r.to].forEach(a=>{ if(a&&a!=="-") s.add(a); }); });
+  return [...s].sort((a,b)=>{ const rank=x=>/筑波/.test(x)?0:/ゆうちょ/.test(x)?1:/楽天/.test(x)?2:(isDCard(x)?3:4); return rank(a)-rank(b)||a.localeCompare(b); }); }
+/* 残高＝全ての資金移動を反映（集計フラグに一切依存しない＝Zaimロジック＝実残高一致）。
+   残高調整(balance)行は積み上げに含めない（アンカーで吸収済み）。 */
+function bankBalanceExact(acct, monthKey){ const end=monthKey?lastDayOf(monthKey):"9999-12-31"; const from=openFromOf(); let bal=openingOf(acctKey(acct));
+  (store._raw||[]).forEach(r=>{ if(r.method==="balance") return; const d=(r.date||"").slice(0,10); if(!d||d>end) return; if(from&&d<from) return;
+    if(r.to===acct) bal+=(r.inc||0); if(r.from===acct) bal-=(r.exp||0); });
+  return bal; }
+function bankBalanceKey(key, monthKey){ const accts=accountsInData().filter(a=>acctKey(a)===key); if(!accts.length) return openingOf(key);
+  const end=monthKey?lastDayOf(monthKey):"9999-12-31"; const from=openFromOf(); let bal=openingOf(key);
+  (store._raw||[]).forEach(r=>{ if(r.method==="balance") return; const d=(r.date||"").slice(0,10); if(!d||d>end) return; if(from&&d<from) return;
+    if(accts.includes(r.to)) bal+=(r.inc||0); if(accts.includes(r.from)) bal-=(r.exp||0); });
+  return bal; }
+/* 現金口座（補助表示）：ATM引出で+／ATM預入で−。所在不明の差分＝手元現金。0開始・銀行残高とは独立。 */
+function cashBalance(monthKey){ const end=monthKey?lastDayOf(monthKey):"9999-12-31"; const from=openFromOf(); let bal=Number((store.opening||{})["現金"]||0);
+  (store._raw||[]).forEach(r=>{ const d=(r.date||"").slice(0,10); if(!d||d>end) return; if(from&&d<from) return;
+    if(isATMout(r)) bal+=(r.exp||0); if(isATMin(r)) bal-=(r.inc||0); });
+  return bal; }
+
+/* ---- Dカード請求サイクル（締め15日 / 引落翌月10日） ---- */
+function usageWindow(payMonth){ const s=addMonths(payMonth,-2), e=addMonths(payMonth,-1); return {start:s+"-16",end:e+"-15"}; }
+function openDcardCycle(){ const t=todayStr(); const tm=t.slice(0,7); const day=+t.slice(8,10); const payMonth=day>=16?addMonths(tm,2):addMonths(tm,1); const uw=usageWindow(payMonth); return {payMonth,payDate:payMonth+"-10",start:uw.start,end:uw.end,today:t}; }
+function dcardUsageSum(start,end){ return (store._raw||[]).filter(r=>isDCard(r.from)&&(r.exp||0)>0&&r.date>=start&&r.date<=end&&r.agg!=="集計に含めない").reduce((a,r)=>a+r.exp,0); }
+function dcardPayForMonth(mk){ const uw=usageWindow(mk); return dcardUsageSum(uw.start,uw.end); }  // mk月10日に引き落とされる額
+
+/* ---- 収支除外はマスタ（スプシの集計フラグ）に一元化。ツール独自の自己振込判定は撤去。 ---- */
+let __stCache=null,__stKey="";
+function isSelfTransferRaw(r){ return false; }   // 撤去（後方互換のためのスタブ）
+
+/* ======================================================================
+   カテゴリ・固定費のルール（店キーで過去・未来全体に反映）
+   ====================================================================== */
+const DEFAULT_CATS=["食費","日用雑貨","交通","交際費","趣味・娯楽","衣服・美容","医療・保険","水道・光熱","通信","住宅","教育・教養","借入","現金・カード","その他"];
+/* 反映キー（紐づけ）：お店を最優先。お店が空のときだけメモを使うが、
+   毎月変わるバッチID/参照番号(数字)や区切りを除去して安定化させる（例: 北洋銀行の口座振替）。 */
+function normMemoKey(s){ return String(s||"").replace(/[0-9０-９]+/g,"").replace(/[-‐－—_\/\s]+/g,"").trim(); }
+/* 全月同一で固定費とする金融機関（振込先）。表記ゆれ・支店・口座番号の差異を吸収し、正規名に統一。
+   未来に追加される明細も同じパターンで自動的に同一扱いになる。 */
+const FIXED_BANKS=[
+  {name:"北洋銀行", re:/北洋/},
+  {name:"福岡銀行", re:/福岡銀行|福岡ぎんこう|ふくおか銀行/},
+  {name:"三井住友", re:/三井住友/},
+  {name:"三菱UFJ柳橋支店", re:/(三菱\s*ＵＦＪ|三菱\s*UFJ|三菱東京).*(柳橋)|柳橋.*(三菱\s*ＵＦＪ|三菱\s*UFJ)/},
+  {name:"楽天銀行第四営業所", re:/楽天銀行.*(第四|第４)|(第四|第４)営業所.*楽天/}
+];
+function fixedBankOf(r){ const hay=(r.store||"")+" "+(r.memo||"")+" "+(r.to||"")+" "+(r.from||""); for(const b of FIXED_BANKS){ if(b.re.test(hay)) return b.name; } return null; }
+function mkey(r){ const fb=fixedBankOf(r); if(fb) return fb; const s=(r.store||"").trim(); if(s) return s; const m=normMemoKey(r.memo); return m || (r.cat||"").trim(); }
+function autoCat(r){ return (r.cat&&r.cat!=="-")?r.cat:"未分類"; }
+function isFixedKeywordRow(r){ const s=(r.store||"")+" "+(r.memo||"")+" "+(effCatRaw(r))+" "+(r.sub||"");
+  return /電気|ガス|水道|光熱|電力|でんき|通信|携帯|スマホ|インターネット|wi-?fi|プロバイダ|docomo|ドコモ|softbank|ソフトバンク|楽天モバイル|奨学金|jasso|学生支援|保険|共済|返済|ローン|借入|分割|netflix|spotify|youtube|disney|prime|dazn|u-next|apple|icloud|サブスク|会費|月額|nhk|家賃/i.test(s); }
+function effCatRaw(r){ return (r.cat&&r.cat!=="-")?r.cat:""; }   // isFixedKeywordRow用（ルール未適用の元カテゴリ）
+function effCat(r){ const k=mkey(r); if(k&&store.catRules[k]!=null&&store.catRules[k]!=="") return store.catRules[k]; return autoCat(r); }
+// 固定費判定：ユーザー明示ルール＞指定金融機関(常に固定)＞キーワード
+function effFixed(r){ const k=mkey(r); if(k&&store.fixRules[k]!=null) return !!store.fixRules[k]; if(fixedBankOf(r)) return true; return isFixedKeywordRow(r); }
+function allCats(){ const s=new Set(DEFAULT_CATS); (store.customCats||[]).forEach(c=>s.add(c)); Object.values(store.catRules||{}).forEach(c=>{if(c)s.add(c);}); (store._raw||[]).forEach(r=>{const c=autoCat(r); if(c&&c!=="未分類")s.add(c);}); return [...s]; }
+function setCatRule(k,cat){ if(!k) return; if(cat) store.catRules[k]=cat; else delete store.catRules[k]; if(cat&&DEFAULT_CATS.indexOf(cat)<0&&(store.customCats||[]).indexOf(cat)<0){ store.customCats=store.customCats||[]; store.customCats.push(cat); } }
+function setFixRule(k,val){ if(!k) return; if(val==null) delete store.fixRules[k]; else store.fixRules[k]=!!val; }
+
+/* ---------- dカードは「請求月」で集計（全ページ共通） ----------
+   スプシ月次内訳と同じルール：選択月Mのdカード支出＝Mの前々月16日〜前月15日の利用明細（M月10日引落分）。
+   銀行直接の支出はカレンダー月のまま。 */
+function dcardBillMonth(dateStr){ const m=(dateStr||"").slice(0,7); const day=+(dateStr||"").slice(8,10); if(!/^\d{4}-\d{2}$/.test(m)) return m; return day>=16?addMonths(m,2):addMonths(m,1); }
+function effMonth(r){ return isDCard(r.from)?dcardBillMonth(r.date):(r.date||"").slice(0,7); }
+
+/* ---------- 消費(PL)モデル：全ページ統一 ---------- */
+function consumptionRows(mk){ return (store._raw||[]).filter(r=>{ if((r.exp||0)<=0) return false; if(effMonth(r)!==mk) return false; if(r.agg==="集計に含めない") return false; if(isDCard(r.from)) return true; if(acctIsBankRaw(r.from)) return !isDcardSettle(r); return false; }); }
+function consAll(){ return (store._raw||[]).filter(r=>{ if((r.exp||0)<=0||r.agg==="集計に含めない") return false; if(isDcardSettle(r)) return false; return isDCard(r.from)||acctIsBankRaw(r.from); }); }
+function incomeRows(mk){ return (store._raw||[]).filter(r=>(r.inc||0)>0&&(r.date||"").slice(0,7)===mk&&r.agg!=="集計に含めない"&&r.to&&r.to!=="-"); }
+function monthExpense(mk){ return consumptionRows(mk).reduce((a,r)=>a+(r.exp||0),0); }
+function monthIncomeSheet(mk){ return incomeRows(mk).reduce((a,r)=>a+(r.inc||0),0); }
+function monthFixed(mk){ return consumptionRows(mk).filter(effFixed).reduce((a,r)=>a+(r.exp||0),0); }
+function catLabel(r){ return effFixed(r)?"固定費":effCat(r); }
+// 円グラフ用：固定費を1スライスに集約、他はカテゴリ別
+function pieBreakdown(rows){ const g={}; rows.forEach(r=>{ const c=catLabel(r); (g[c]=g[c]||{cat:c,sum:0,items:[]}); g[c].sum+=(r.exp||0); g[c].items.push(r); }); return Object.values(g).sort((a,b)=>b.sum-a.sum); }
+// 除外データ（マスタ蓄積用）
+function excludedRows(){ return (store._raw||[]).filter(r=>((r.exp||0)>0||(r.inc||0)>0)&&(r.agg==="集計に含めない"||isDcardSettle(r))); }
+
+/* ---------- 月リスト ---------- */
+function monthsInData(){ const s=new Set(); (store._raw||[]).forEach(r=>{ const d=(r.date||"").slice(0,7); if(!/^\d{4}-\d{2}$/.test(d)) return; s.add(d); if((r.exp||0)>0 && isDCard(r.from)){ const bm=effMonth(r); if(/^\d{4}-\d{2}$/.test(bm)) s.add(bm); } }); return [...s].sort(); }
+let listMonth=null, depMonth=null, anaSel="__cur";
+function rebuildMonths(){ const ms=monthsInData(); const cur=todayStr().slice(0,7); if(!listMonth) listMonth=ms.length?ms[ms.length-1]:cur; if(!depMonth) depMonth=cur; }
+let __caches=[]; function invalidateCaches(){ __stCache=null; }
+
+/* ======================================================================
+   円グラフ（SVG・タップで内訳展開）
+   ====================================================================== */
+/* カテゴリ色（全ページ共通・一貫）。未定義カテゴリはハッシュで安定割当 */
+const CAT_COLORS={
+  "食費":"#E8705B","日用雑貨":"#4FB477","交通":"#5B8DEF","交際費":"#E091C0","趣味・娯楽":"#9B72CF",
+  "衣服・美容":"#E7B44D","美容・衣服":"#E7B44D","医療・保険":"#6EC6E6","健康・医療":"#6EC6E6","水道・光熱":"#F2994A",
+  "通信":"#56C2C2","住宅":"#B07C5B","家・住宅":"#B07C5B","教育・教養":"#7C9CF2","教養・教育":"#7C9CF2",
+  "借入":"#D46A6A","現金・カード":"#8A9995","税・社会保障":"#A0876B","保険":"#6EC6E6","車":"#5FA8D3",
+  "固定費":"#E7B44D","給与":"#35C6A6","収入":"#35C6A6","その他":"#9AA6A2","未分類":"#7FA6A0"
+};
+const CAT_PALETTE=["#E8705B","#4FB477","#5B8DEF","#E091C0","#9B72CF","#E7B44D","#6EC6E6","#F2994A","#56C2C2","#B07C5B","#7C9CF2","#D46A6A","#67B26F","#C98A5B","#B0B65B","#6A8CAF","#CB7DD8","#5FA8D3","#E0A458","#7FB88E"];
+function catColor(cat){ if(CAT_COLORS[cat]) return CAT_COLORS[cat]; let h=0; const s=String(cat||""); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return CAT_PALETTE[h%CAT_PALETTE.length]; }
+function catBadge(cat){ const c=catColor(cat); return `<span class="badge" style="background:${c}22;color:${c}">${esc(cat)}</span>`; }
+let __pieStore={};
+function renderPie(id,bd){ const total=bd.reduce((a,b)=>a+b.sum,0); __pieStore[id]=bd;
+  if(!total) return `<div class="muted" style="font-size:13px;text-align:center;padding:12px">支出データなし</div>`;
+  const cx=90,cy=90,r=64,sw=28,C=2*Math.PI*r; let a=-Math.PI/2,seg="";
+  bd.forEach((b,i)=>{ const frac=b.sum/total,len=frac*C; seg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${catColor(b.cat)}" stroke-width="${sw}" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-a/(2*Math.PI)*C}"/>`; a+=frac*2*Math.PI; });
+  const legend=bd.map((b,i)=>{ const pc=Math.round(b.sum/total*100); const det=b.items.slice().sort((x,y)=>(y.exp||0)-(x.exp||0)).map(it=>`<div class="di"><span>${esc((it.date||"").slice(5))} ${esc(it.store||it.memo||it.cat||"")}</span><span>${yen(it.exp)}</span></div>`).join("");
+    return `<div class="lr"><div class="lhead" onclick="__pieTap('${id}',${i})"><span class="dot" style="background:${catColor(b.cat)}"></span><span class="nm">${esc(b.cat)}</span><span class="pc">${pc}%</span><span class="vv">${yen(b.sum)}</span></div><div class="detail" id="${id}-d${i}">${det}</div></div>`; }).join("");
+  return `<div style="text-align:center"><svg width="180" height="180" viewBox="0 0 180 180">${seg}<text x="90" y="86" text-anchor="middle" font-size="11" fill="#8A9995">支出合計</text><text x="90" y="108" text-anchor="middle" font-size="16" font-weight="800" fill="#E8EDEB">${yen(total)}</text></svg></div><div class="legend">${legend}</div>`; }
+function __pieTap(id,i){ const el=document.getElementById(id+"-d"+i); if(el) el.classList.toggle("open"); }
+/* 横棒グラフ（分析用）。breakdownは{cat,sum,items}[]。タップで明細展開（__pieTap再利用）。 */
+function renderBar(id,bd){ const total=bd.reduce((a,b)=>a+b.sum,0); __pieStore[id]=bd;
+  if(!total) return `<div class="muted" style="font-size:13px;text-align:center;padding:12px">支出データなし</div>`;
+  const max=Math.max(...bd.map(b=>b.sum))||1;
+  const rows=bd.map((b,i)=>{ const pc=Math.round(b.sum/total*100); const w=Math.max(3,Math.round(b.sum/max*100)); const col=catColor(b.cat);
+    const det=b.items.slice().sort((x,y)=>(y.exp||0)-(x.exp||0)).map(it=>`<div class="di"><span>${esc((it.date||"").slice(5))} ${esc(it.store||it.memo||it.cat||"")}</span><span>${yen(it.exp)}</span></div>`).join("");
+    return `<div class="lr"><div class="lhead" onclick="__pieTap('${id}',${i})" style="display:flex;align-items:center;gap:8px">
+        <span class="dot" style="background:${col}"></span><span class="nm" style="flex:1">${esc(b.cat)}</span><span class="pc">${pc}%</span><span class="vv">${yen(b.sum)}</span></div>
+      <div style="height:11px;background:var(--line);border-radius:6px;overflow:hidden;margin:1px 0 5px"><div style="height:100%;width:${w}%;background:${col};border-radius:6px;transition:width .3s"></div></div>
+      <div class="detail" id="${id}-d${i}">${det}</div></div>`; }).join("");
+  return `<div style="text-align:right;margin-bottom:8px"><span class="note">支出合計 </span><span class="amt r">${yen(total)}</span></div><div class="legend">${rows}</div>`; }
+
+/* ======================================================================
+   ページ1: 明細一覧
+   ====================================================================== */
+function catIcon(cat){ const m={"食費":"🍚","日用雑貨":"🧴","交通":"🚃","交際費":"🍻","趣味・娯楽":"🎮","衣服・美容":"👕","医療・保険":"🏥","水道・光熱":"💡","通信":"📶","住宅":"🏠","教育・教養":"📚","借入":"🏦","現金・カード":"💳","固定費":"📌","給与":"💰","その他":"📦","未分類":"❓"}; return m[cat]||"📦"; }
+function renderList(){ if(!listMonth) rebuildMonths(); $("#lMonth").textContent=ymLabel(listMonth);
+  const exp=consumptionRows(listMonth), inc=incomeRows(listMonth);
+  const eSum=exp.reduce((a,r)=>a+r.exp,0), iSum=inc.reduce((a,r)=>a+r.inc,0);
+  $("#lSummary").innerHTML=`<div class="row2"><span class="lab">収入</span><span class="amt g">${yen(iSum)}</span></div><div class="row2"><span class="lab">支出</span><span class="amt r">${yen(eSum)}</span></div><div class="row2"><span class="lab">差引</span><span class="amt ${iSum-eSum>=0?'g':'r'}">${yen(iSum-eSum)}</span></div>`;
+  const rows=[...inc.map(r=>({r,kind:"inc"})),...exp.map(r=>({r,kind:"exp"}))].sort((a,b)=>(b.r.date||"").localeCompare(a.r.date||""));
+  let html="";
+  if(!rows.length) html=`<div class="empty"><div class="e">🗓</div>この月の明細はありません</div>`;
+  else { let curd=""; rows.forEach(({r,kind})=>{ const d=(r.date||"").slice(0,10); if(d!==curd){ curd=d; html+=`<div class="daylab">${esc(d.slice(5))}</div>`; }
+    const idx=store._raw.indexOf(r); const cat=kind==="inc"?"給与":effCat(r); const fixed=kind==="exp"&&effFixed(r); const col=catColor(cat);
+    html+=`<div class="tx" onclick="openEdit(${idx})"><div class="ic" style="background:${col}22;color:${col}">${catIcon(kind==="inc"?"給与":catLabel(r))}</div><div class="mm"><div class="c">${esc(r.store||r.memo||r.cat||(kind==="inc"?"収入":"支出"))}</div><div class="s">${catBadge(kind==="inc"?"収入":effCat(r))}${fixed?'<span class="badge fix">固定</span>':''} ${esc(acctKey(kind==="inc"?r.to:r.from))}</div></div><div class="val ${kind==="inc"?'g':'r'}">${kind==="inc"?"+":"−"}${yen(kind==="inc"?r.inc:r.exp)}</div></div>`; }); }
+  $("#lBody").innerHTML=html;
+}
+function openEdit(idx){ const r=store._raw[idx]; if(!r) return; const k=mkey(r); const isInc=(r.inc||0)>0&&!(r.exp>0);
+  const sameCount=(store._raw||[]).filter(x=>mkey(x)===k).length;
+  const byStore=(r.store||"").trim()?"お店":"メモ(数字除去)";
+  const cats=allCats(); const curCat=effCat(r); const curFix=effFixed(r);
+  const chips=cats.map(c=>`<span class="chip ${c===curCat?'on':''}" style="${c===curCat?'':'border-left:4px solid '+catColor(c)}" onclick="__pickCat(this,'${esc(c).replace(/'/g,"")}')">${esc(c)}</span>`).join("");
+  $("#modalBox").innerHTML=`<h3>明細を編集</h3>
+    <div class="note" style="margin-top:-6px;margin-bottom:8px">${esc(r.store||r.memo||"(名称なし)")} ／ ${esc((r.date||"").slice(0,10))} ／ ${yen(isInc?r.inc:r.exp)}</div>
+    <div class="note" style="color:var(--mint)">紐づけキー（${byStore}）：<b>「${esc(k||"—")}」</b><br>この同じキーの <b>全 ${sameCount} 件</b>（過去・今後）に一括反映されます。</div>
+    <div style="margin:10px 0 4px;font-size:13px;color:var(--sub)">カテゴリー</div>
+    <div id="catChips">${chips}</div>
+    <div class="field"><label>新カテゴリ</label><input id="newCat" placeholder="無ければ入力して追加"></div>
+    ${isInc?"":`<label class="switch" style="margin-top:6px"><input type="checkbox" id="fixChk" ${curFix?"checked":""}><span>この明細を固定費にする（同じお店を全期間で固定費化）</span></label>`}
+    <button class="btn btn-primary" style="margin-top:12px" onclick="saveEdit(${idx})">保存して全体に反映</button>
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>`;
+  $("#modalBox")._pickCat=curCat; $("#modalBg").classList.add("show");
+}
+function __pickCat(el,c){ document.querySelectorAll("#catChips .chip").forEach(x=>x.classList.remove("on")); el.classList.add("on"); $("#modalBox")._pickCat=c; const nc=$("#newCat"); if(nc) nc.value=""; }
+function saveEdit(idx){ const r=store._raw[idx]; if(!r) return; const k=mkey(r); const nc=($("#newCat")&&$("#newCat").value||"").trim(); const cat=nc||$("#modalBox")._pickCat;
+  setCatRule(k,cat); const fc=$("#fixChk"); if(fc) setFixRule(k,fc.checked); invalidateCaches(); save(); markSettingsChanged(); closeModal(); renderAll(); toast("「"+(k||"—")+"」を全体に反映しました"); }
+function closeModal(){ $("#modalBg").classList.remove("show"); }
+
+/* ======================================================================
+   ページ2: 預金管理
+   ====================================================================== */
+function incOf(mk){ const o=store.incomes[mk]||{}; return {h:+o.h||0,w:+o.w||0,c:+o.c||0,sum:(+o.h||0)+(+o.w||0)+(+o.c||0)}; }
+// 当月＝手動入力（未入力ならシート値）。過去月＝取引データの収入を自動反映（あれば）。
+function incEff(mk){
+  const cur=todayStr().slice(0,7); const manual=store.incomes[mk];
+  const ms=manual?((+manual.h||0)+(+manual.w||0)+(+manual.c||0)):0; const sheet=monthIncomeSheet(mk);
+  if(mk===cur){ return manual?{sum:ms,h:+manual.h||0,w:+manual.w||0,c:+manual.c||0,src:"manual"}:{sum:sheet,h:0,w:0,c:0,src:"sheet"}; }
+  if(sheet>0) return {sum:sheet,h:0,w:0,c:0,src:"sheet"};
+  return manual?{sum:ms,h:+manual.h||0,w:+manual.w||0,c:+manual.c||0,src:"manual"}:{sum:0,h:0,w:0,c:0,src:"none"};
+}
+function bankDirectExpense(mk){ // 当月の銀行直接支出（消費のうち銀行から直接／カード引落は別扱い）
+  return consumptionRows(mk).filter(r=>acctIsBankRaw(r.from)).reduce((a,r)=>a+r.exp,0); }
+/* 固定費合計（全月共通）：固定費に設定された全系列の月額を合算し、どの月でも同じ額を反映 */
+function recurringFixedTotal(){ return fixedSeries().reduce((a,s)=>a+(s.monthly||0),0); }
+/* 預金ページの支出内訳：固定費は上の全月共通額を1枠、変動費は当月実績のカテゴリ別 */
+function depPieBreakdown(mk){ const g={}; consumptionRows(mk).filter(r=>!effFixed(r)).forEach(r=>{ const c=effCat(r); (g[c]=g[c]||{cat:c,sum:0,items:[]}); g[c].sum+=(r.exp||0); g[c].items.push(r); });
+  const arr=Object.values(g).sort((a,b)=>b.sum-a.sum); const rf=recurringFixedTotal();
+  if(rf>0) arr.unshift({cat:"固定費",sum:rf,items:consAll().filter(effFixed)}); return arr; }
+/* 手動収入：当月に入力した収入を「翌月」の現在残高に繰り越す */
+function manualIncomeSum(m){ const o=store.incomes[m]; return o?((+o.h||0)+(+o.w||0)+(+o.c||0)):0; }
+function carriedIncome(mk){ return manualIncomeSum(addMonths(mk,-1)); }
+/* 現金：手動編集値をそのまま表示（ATM実態が不明なため） */
+function cashManual(){ return Number(store.cashManual||0); }
+function renderDeposit(){ if(!depMonth) rebuildMonths(); const mk=depMonth; $("#dMonth").textContent=ymLabel(mk); const mm=monthMeta(mk);
+  const mainAcct="筑波"; const carried=carriedIncome(mk); const actualBal=bankBalanceKey(mainAcct,null); const curBal=actualBal+carried; // 現在の筑波残高（前月の手動収入を反映）
+  // ①-1 当月11日の底残高予測
+  const card10=dcardPayForMonth(mk);                       // 当月10日に引き落とされるカード額
+  const t=todayStr(); const beforeThe10 = (t.slice(0,7)<mk) || (t.slice(0,7)===mk && +t.slice(8,10)<=10) || (mk>t.slice(0,7));
+  const trough = curBal - (beforeThe10 ? card10 : 0);
+  const prevMk=addMonths(mk,-1); const prevDebit=bankDirectExpense(prevMk)+dcardPayForMonth(prevMk);
+  // pie（当月消費：v15設計）
+  const bd=pieBreakdown(consumptionRows(mk)); const fixSum=monthFixed(mk); const expSum=monthExpense(mk);
+  // ①-2 貯金口座
+  const savBal=bankBalanceKey(store.savingsAcct||"ゆうちょ",null);
+  // ② 給与（当月のみ手動／過去はシート自動）
+  const isCurMonth=(mk===todayStr().slice(0,7)); const inc=incEff(mk);
+
+  $("#depBody").innerHTML=`
+  <div class="card">
+    <h3>① 当月11日の口座残高予測（底）<span class="tag">${mainAcct}</span></h3>
+    <div style="text-align:right"><div class="big ${trough>=0?'':'r'}">${yen(trough)}</div><div class="note">カード引落(10日)通過後の想定残高＝月内の底</div></div>
+    <div class="row2"><span class="lab">現在の${mainAcct}残高${carried>0?"（前月手動収入 +"+yen(carried)+" 反映）":""}</span><span class="amt">${yen(curBal)}</span></div>
+    <div class="row2"><span class="lab">当月10日 カード引落予定</span><span class="amt r">−${yen(card10)}</span></div>
+    <div class="row2"><span class="lab">前月の口座引落 総額(実績・参考)</span><span class="amt">${yen(prevDebit)}</span></div>
+  </div>
+  <div class="card">
+    <h3>① 当月の支出内訳（固定費＋カテゴリ別）</h3>
+    <div class="row2"><span class="lab">固定費 合計</span><span class="amt am">${yen(fixSum)}</span></div>
+    <div class="row2"><span class="lab">変動費 合計</span><span class="amt">${yen(expSum-fixSum)}</span></div>
+    ${renderPie("dpie1",bd)}
+  </div>
+  <div class="card">
+    <h3>①-2 貯金口座の残高<span class="tag">${esc(store.savingsAcct||"ゆうちょ")}</span></h3>
+    <div style="text-align:right"><div class="mid g">${yen(savBal)}</div></div>
+    <div class="note">貯金口座は「設定」タブで変更できます</div>
+  </div>
+  <div class="card">
+    <h3>💰 現在の口座残高（全movement反映）</h3>
+    <div class="row2"><span class="lab">筑波</span><span class="amt">${yen(actualBal)}</span></div>
+    <div class="row2"><span class="lab">ゆうちょ</span><span class="amt">${yen(bankBalanceKey("ゆうちょ",null))}</span></div>
+    <div class="row2"><span class="lab">楽天</span><span class="amt">${yen(bankBalanceKey("楽天",null))}</span></div>
+    <div class="field" style="margin-top:8px"><label>現金（手動）</label><input id="cashInput" type="number" inputmode="numeric" value="${cashManual()||""}" placeholder="0"></div>
+    <div class="note">現金はATM実態が不明なため手動編集です（参考：ATM引出−預入 ${yen(cashBalance(null))}）。口座残高は全資金移動を反映（＝実際の通帳残高と一致）。</div>
+  </div>
+  <div class="card">
+    <h3>② ${isCurMonth?"当月の収入（手動入力）":"収入（取引データより自動）"}</h3>
+    ${isCurMonth?`
+    <div class="field"><label>夫</label><input id="incH" type="number" inputmode="numeric" value="${inc.h||""}" placeholder="0"></div>
+    <div class="field"><label>妻</label><input id="incW" type="number" inputmode="numeric" value="${inc.w||""}" placeholder="0"></div>
+    <div class="field"><label>保育支援金</label><input id="incC" type="number" inputmode="numeric" value="${inc.c||""}" placeholder="0"></div>
+    <div class="row2"><span class="lab">収入合計</span><span class="amt g" id="incSum">${yen(inc.sum)}</span></div>
+    <button class="btn btn-primary" style="margin-top:8px" id="incSave">この月の収入を保存</button>
+    <div class="note">入力した収入は<b>翌月の「現在の${mainAcct}残高」</b>に反映されます。未入力の場合は取引データの収入（${yen(monthIncomeSheet(mk))}）を使用します。</div>`
+    :`<div style="text-align:right"><div class="mid g">${yen(inc.sum)}</div></div>
+    <div class="note">この月は取引データの収入を自動反映しています（手動入力は当月のみ）。</div>`}
+  </div>`;
+  const cin=$("#cashInput"); if(cin) cin.onchange=()=>{ store.cashManual=+(cin.value||0); save(); markSettingsChanged(); toast("現金を保存しました"); };
+  if(isCurMonth){
+    const bind=()=>{ const h=+($("#incH").value||0),w=+($("#incW").value||0),c=+($("#incC").value||0); const el=$("#incSum"); if(el) el.textContent=yen(h+w+c); };
+    ["incH","incW","incC"].forEach(id=>{ const el=$("#"+id); if(el) el.oninput=bind; });
+    const sv=$("#incSave"); if(sv) sv.onclick=()=>{ store.incomes[mk]={h:+($("#incH").value||0),w:+($("#incW").value||0),c:+($("#incC").value||0)}; save(); markSettingsChanged(); renderDeposit(); toast("収入を保存しました"); };
+  }
+}
+
+/* ======================================================================
+   ページ3: 固定費管理
+   ====================================================================== */
+function fixedSeries(){ // 固定費の系列（店キーごと）を集計。指定金融機関は正規名で1系列に統一。
+  const g={}; consAll().filter(effFixed).forEach(r=>{ const k=mkey(r); const nm=fixedBankOf(r)||r.store||r.memo||r.cat||"固定費"; (g[k]=g[k]||{key:k,name:nm,cat:effCat(r),rows:[]}); g[k].rows.push(r); });
+  return Object.values(g).map(s=>{ const months=[...new Set(s.rows.map(r=>effMonth(r)))]; const total=s.rows.reduce((a,r)=>a+r.exp,0); const monthly=Math.round(total/Math.max(1,s.rows.length));
+    return Object.assign(s,{months,total,monthly,count:s.rows.length}); }).sort((a,b)=>b.monthly-a.monthly); }
+function isLoanCat(c){ return /借入|ローン|返済/.test(c||""); }
+function isUtilCat(c){ return /光熱|水道|電気|ガス/.test(c||""); }
+/* 固定費系列の実明細（スプシの金額をそのまま表示）。タップで開閉。 */
+function __fixTap(id){ const el=document.getElementById(id); if(el) el.classList.toggle("open"); }
+function fixDetailHtml(s){ const id="fixd-"+esc(s.key).replace(/[^a-zA-Z0-9]/g,"_")+"_"+s.count;
+  const items=s.rows.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(r=>{ const bm=effMonth(r); const cal=(r.date||"").slice(0,7); const tag=(bm!==cal)?` <span class="muted" style="font-size:10px">→${ymLabel(bm)}請求</span>`:"";
+    return `<div class="di"><span>${esc((r.date||"").slice(0,10))} ${esc(r.store||r.memo||r.cat||"")}${tag}</span><span>${yen(r.exp)}</span></div>`; }).join("");
+  return {id, btn:`<button class="fixedit" onclick="__fixTap('${id}')">▼ 明細(${s.count})</button>`, box:`<div class="detail" id="${id}">${items}<div class="di" style="border-top:1px solid var(--line);font-weight:700"><span>合計 / 1回あたり</span><span>${yen(s.total)} / ${yen(s.monthly)}</span></div></div>`}; }
+function renderFixed(){ const ss=fixedSeries(); const totalMonthly=ss.reduce((a,s)=>a+s.monthly,0);
+  let html=`<div class="card"><h3>📌 固定費 合計（月あたり）</h3><div style="text-align:right"><div class="big am">${yen(totalMonthly)}</div><div class="note">${ss.length}件の固定費系列</div></div></div>`;
+  if(!ss.length){ $("#fixBody").innerHTML=html+`<div class="empty"><div class="e">📌</div>固定費がありません。明細一覧で固定費に設定できます。</div>`; return; }
+  // 借入
+  const loans=ss.filter(s=>isLoanCat(s.cat)); const utils=ss.filter(s=>isUtilCat(s.cat)); const others=ss.filter(s=>!isLoanCat(s.cat)&&!isUtilCat(s.cat));
+  if(loans.length){ html+=`<div class="card"><h3>🏦 借入・返済の完済見通し</h3>`;
+    loans.forEach(s=>{ const total=+((store.loans||{})[s.key])||0; const paid=s.total; const remain=Math.max(0,total-paid); const left=total>0?Math.ceil(remain/Math.max(1,s.monthly)):0; const done=addMonths(todayStr().slice(0,7),left); const eidx=store._raw.indexOf(s.rows[0]); const fd=fixDetailHtml(s);
+      html+=`<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center"><b>${esc(s.name)}</b><span style="display:flex;align-items:center;gap:8px"><span class="amt">${yen(s.monthly)}/月</span>${fd.btn}<button class="fixedit" onclick="openEdit(${eidx})">✎ 編集</button></span></div>${fd.box}
+        <div class="field"><label>借入総額</label><input type="number" inputmode="numeric" id="loan-${esc(s.key)}" value="${total||""}" placeholder="総額を入力"></div>
+        ${total>0?`<div class="row2"><span class="lab">既払（データ上）</span><span>${yen(paid)}</span></div><div class="row2"><span class="lab">残額</span><span class="amt r">${yen(remain)}</span></div><div class="row2"><span class="lab">完済予定</span><span class="amt g">${remain<=0?"完済済み":"あと約"+left+"回 ("+ymLabel(done)+"頃)"}</span></div>`:`<div class="note">総額を入力すると完済予定を計算します</div>`}
+        <button class="btn btn-ghost" onclick="saveLoan('${esc(s.key).replace(/'/g,"")}')" style="margin-top:6px">総額を保存</button></div>`; });
+    html+=`</div>`; }
+  // 光熱費
+  if(utils.length){ html+=`<div class="card"><h3>💡 光熱費（過去平均つき）</h3>`;
+    utils.forEach(s=>{ const eidx=store._raw.indexOf(s.rows[0]); const fd=fixDetailHtml(s); html+=`<div class="row2"><span class="lab">${esc(s.name)}</span><span style="display:flex;align-items:center;gap:8px"><span class="amt am">${yen(s.monthly)}/月</span>${fd.btn}<button class="fixedit" onclick="openEdit(${eidx})">✎ 編集</button></span></div><div class="note" style="margin:0 0 6px">1回あたり ${yen(s.monthly)}（${s.count}回・合計${yen(s.total)}）</div>${fd.box}`; });
+    html+=`</div>`; }
+  // その他
+  if(others.length){ html+=`<div class="card"><h3>📄 その他の固定費（明細）</h3>`;
+    others.forEach(s=>{ const eidx=store._raw.indexOf(s.rows[0]); const fd=fixDetailHtml(s); html+=`<div class="row2"><span class="lab">${esc(s.name)} <span class="badge cat">${esc(s.cat)}</span></span><span style="display:flex;align-items:center;gap:8px"><span class="amt">${yen(s.monthly)}/月</span>${fd.btn}<button class="fixedit" onclick="openEdit(${eidx})">✎ 編集</button></span></div>${fd.box}`; });
+    html+=`</div>`; }
+  $("#fixBody").innerHTML=html;
+}
+function saveLoan(k){ const el=document.getElementById("loan-"+k); if(!el) return; store.loans=store.loans||{}; store.loans[k]=+(el.value||0); save(); markSettingsChanged(); renderFixed(); toast("借入総額を保存しました"); }
+
+/* ======================================================================
+   ページ4: 分析（お店ごとの集計表・期間＋カテゴリでフィルタ）
+   ====================================================================== */
+let anaCat="__all";
+function analysisRows(){
+  let rows;
+  if(anaSel==="__all") rows=consAll();
+  else { const mk=(anaSel==="__cur")?todayStr().slice(0,7):anaSel; rows=consumptionRows(mk); }
+  if(anaCat==="__all") return rows;
+  if(anaCat==="__fixed") return rows.filter(effFixed);
+  if(anaCat==="__variable") return rows.filter(r=>!effFixed(r));
+  return rows.filter(r=>effCat(r)===anaCat);
+}
+function renderAnaSelect(){ const sel=$("#anaSel"); const ms=monthsInData(); let html=`<option value="__cur">今月 (${ymLabel(todayStr().slice(0,7))})</option><option value="__all">全期間</option>`;
+  ms.slice().reverse().forEach(m=>{ if(m!==todayStr().slice(0,7)) html+=`<option value="${m}">${ymLabel(m)}</option>`; }); sel.innerHTML=html; sel.value=anaSel;
+  // カテゴリセレクト：実データに存在するカテゴリのみ
+  const cs=$("#anaCatSel"); const present=[...new Set(consAll().map(r=>effCat(r)))].sort();
+  let chtml=`<option value="__all">すべて</option><option value="__variable">変動費のみ</option><option value="__fixed">固定費のみ</option>`;
+  present.forEach(c=>{ chtml+=`<option value="${esc(c)}">${esc(c)}</option>`; }); cs.innerHTML=chtml; cs.value=anaCat;
+}
+function anaIsSpecificCat(){ return !(anaCat==="__all"||anaCat==="__variable"||anaCat==="__fixed"); }
+// 円グラフ用内訳：特定カテゴリ選択時は「お店」割合、それ以外は「カテゴリ」割合。上位11＋その他に集約。
+function anaBreakdown(rows){
+  const specific=anaIsSpecificCat(); const g={};
+  rows.forEach(r=>{ const key=specific?((r.store||r.memo||r.cat||"(名称なし)").trim()):effCat(r); (g[key]=g[key]||{cat:key,sum:0,items:[]}); g[key].sum+=(r.exp||0); g[key].items.push(r); });
+  let arr=Object.values(g).sort((a,b)=>b.sum-a.sum);
+  if(arr.length>12){ const head=arr.slice(0,11); const restItems=[]; let restSum=0; arr.slice(11).forEach(x=>{ restSum+=x.sum; restItems.push(...x.items); }); head.push({cat:"その他",sum:restSum,items:restItems}); arr=head; }
+  return arr;
+}
+function renderAnalysis(){ renderAnaSelect(); const rows=analysisRows();
+  const periodLabel=anaSel==="__all"?"全期間":(anaSel==="__cur"?"今月":ymLabel(anaSel));
+  const catLabelSel=anaCat==="__all"?"すべて":(anaCat==="__variable"?"変動費":(anaCat==="__fixed"?"固定費":anaCat));
+  const pieMode=anaIsSpecificCat()?"お店の割合":"カテゴリーの割合";
+  // お店ごとに集計（表用）
+  const g={}; rows.forEach(r=>{ const k=(r.store||r.memo||r.cat||"(名称なし)").trim(); (g[k]=g[k]||{name:k,sum:0,cnt:0,cats:{},items:[]}); g[k].sum+=(r.exp||0); g[k].cnt++; const c=effCat(r); g[k].cats[c]=(g[k].cats[c]||0)+(r.exp||0); g[k].items.push(r); });
+  const list=Object.values(g).sort((a,b)=>b.sum-a.sum); const total=list.reduce((a,s)=>a+s.sum,0);
+  let html=`<div class="card"><h3>📊 ${esc(pieMode)}<span class="tag">${esc(periodLabel)} / ${esc(catLabelSel)}</span></h3>`;
+  if(!rows.length){ html+=`<div class="empty"><div class="e">📊</div>該当する明細がありません</div></div>`; $("#anaBody").innerHTML=html; return; }
+  html+=renderBar("apie", anaBreakdown(rows))+`</div>`;
+  // お店ごとの集計表
+  html+=`<div class="card"><h3>🛍 お店ごとの集計表（タップで明細）</h3>
+    <div style="text-align:right;margin-bottom:6px"><span class="note">合計 </span><span class="amt r">${yen(total)}</span><span class="note"> ／ ${list.length}店舗 ${rows.length}件</span></div>
+    <div style="display:flex;font-size:11px;color:var(--sub);padding:0 2px 6px;border-bottom:1px solid var(--line)"><span style="flex:1">お店 / カテゴリ</span><span style="width:36px;text-align:right">件</span><span style="width:90px;text-align:right">合計</span></div>`;
+  list.forEach((s,i)=>{ const topCat=Object.entries(s.cats).sort((a,b)=>b[1]-a[1])[0][0]; const col=catColor(topCat);
+    const det=s.items.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(it=>`<div class="di"><span>${esc((it.date||"").slice(5))} ${catBadge(effCat(it))}</span><span>${yen(it.exp)}</span></div>`).join("");
+    html+=`<div class="lr"><div class="lhead" onclick="__anaTap(${i})" style="display:flex;align-items:center;gap:9px">
+      <span class="dot" style="background:${col}"></span>
+      <span class="nm" style="flex:1">${esc(s.name)}<br><span class="muted" style="font-size:10.5px">${esc(topCat)}</span></span>
+      <span class="muted" style="width:36px;text-align:right;font-size:12px">${s.cnt}</span>
+      <span class="vv" style="width:90px">${yen(s.sum)}</span></div>
+      <div class="detail" id="ana-d${i}">${det}</div></div>`; });
+  html+=`</div>`; $("#anaBody").innerHTML=html; }
+function __anaTap(i){ const el=document.getElementById("ana-d"+i); if(el) el.classList.toggle("open"); }
+
+/* ======================================================================
+   設定ページ
+   ====================================================================== */
+function renderSettings(){
+  $("#hdVer").textContent=APP_VERSION;
+  $("#sheetsUrl").value=store.sheetsUrl||"";
+  $("#obT").value=openingOf("筑波")||""; $("#obY").value=openingOf("ゆうちょ")||""; $("#obR").value=openingOf("楽天")||""; $("#obFrom").value=openFromOf()||"2026-04-02";
+  // 貯金口座セレクト
+  const sav=$("#savAcct"); const keys=["筑波","ゆうちょ","楽天"]; sav.innerHTML=keys.map(k=>`<option value="${k}" ${store.savingsAcct===k?"selected":""}>${k}</option>`).join("");
+  renderExcluded();
+  // 診断
+  const d=DIAG; $("#diagBox").innerHTML=`接続:${esc(d.status||"-")} ／ 行数:${d.rows!=null?d.rows:"-"} ／ 整地:${d.dup!=null?d.dup:"-"}件 ／ 形式:${esc(d.format||"-")} ／ 方式:${esc(d.transport||"-")} ／ 設定:${esc(d.settings||"-")}${d.error?"<br>エラー: "+esc(d.error):""}`;
+  renderSyncCard();
+}
+function renderSyncCard(){
+  const st=$("#syncState"); if(st){ const msg={idle:"起動時・約90秒ごとに自動同期します。",pushing:"送信中…",sent:"送信しました（次回の取得で反映を確認）",ok:"✓ 同期済み",nogas:"⚠ GAS未更新のため書き戻し不可（下のコードをスプシに貼ってください）",error:"⚠ 送信失敗（通信・URLを確認）",off:"URL未設定"}[syncStatus]||syncStatus;
+    const last=store.settingsSyncedAt?new Date(store.settingsSyncedAt).toLocaleString("ja-JP"):"未";
+    const dirty=store.settingsDirty?'<span style="color:var(--amber)">● 未反映の変更あり（自動再送します）</span><br>':"";
+    st.innerHTML=`状態: ${esc(msg)}<br>${dirty}最終同期: ${esc(last)} ／ 設定更新: ${store.settingsUpdatedAt?esc(new Date(store.settingsUpdatedAt).toLocaleString("ja-JP")):"—"}`; }
+  const ta=$("#gasCode"); if(ta && !ta.value) ta.value=GAS_CODE;
+}
+const GAS_CODE=`/**
+ * Kakeibo 家計簿 — 統合版 GAS（既存機能を一切変更せず、設定同期を共存）
+ *
+ * 既存: doGet=「取引データ」をJSON返却(JSONP対応) / doPost=明細をシートに追記
+ * 追加: doGet に settings を同梱して返す / doPost で settings を「設定」タブに保存
+ *       → 家計簿アプリの「手動編集(カテゴリ/固定費/給与/借入/初期残高/自己振込)」を全端末で共有
+ *
+ * ポイント:
+ *  - doGet の返却は従来どおり {ok:true, values:[...]} をそのまま含む（既存の読み手はそのまま動く）。
+ *    さらに settings / settingsUpdatedAt を「追加で」返すだけ（未使用側は無視できる）。
+ *  - doPost は payload に settings があれば「設定」タブへ保存し即return。
+ *    無ければ従来どおり transactions を追記（既存の追記機能は完全に温存）。
+ *  - 「設定」タブは初回書き込み時に自動生成。取引データ・他シートには一切触れない。
+ */
+
+// ===================== doGet（従来＋設定同梱） =====================
+function doGet(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('取引データ') || ss.getActiveSheet();  // ← 整地済みマスタ「取引データ」を返す
+  var values = sheet.getDataRange().getValues();
+  var tz = Session.getScriptTimeZone();
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var row = [];
+    for (var c = 0; c < values[r].length; c++) {
+      var v = values[r][c];
+      if (Object.prototype.toString.call(v) === '[object Date]') {
+        v = Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+      }
+      row.push(v);
+    }
+    out.push(row);
+  }
+
+  // ↓↓ 追加のみ：設定タブ（あれば）を読み、従来のvaluesに添えて返す（既存挙動は不変）
+  out = applyDataFixes_(out);   // ← マスタ補正：内部振込・dカード一括引落を「集計に含めない」に統一（収支のみ。残高はツール側で全movement反映）
+  var s = readSettings_(ss);
+  var payload = JSON.stringify({ ok: true, values: out, settings: s.data, settingsUpdatedAt: s.updatedAt });
+
+  var cb = e && e.parameter && e.parameter.callback;   // ← スマホ用JSONP対応（従来どおり）
+  if (cb) {
+    return ContentService
+      .createTextOutput(cb + '(' + payload + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(payload)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===================== doPost（設定保存 or 従来の明細追記） =====================
+function doPost(e) {
+  var data;
+  try { data = JSON.parse(e.postData.contents); } catch (err) { data = {}; }
+
+  // ↓↓ 追加のみ：設定同期のPOST（settingsを含む）は「設定」タブへ保存して即return
+  //     （既存の明細追記ロジックには一切入らない＝干渉しない）
+  if (data && data.settings) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ua = writeSettings_(ss, data.settings, data.updatedAt);
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true, settingsUpdatedAt: ua }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // ===== ここから既存の明細追記（変更なし） =====
+  var sheet = SpreadsheetApp.getActiveSheet();
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['日付','方法','カテゴリ','カテゴリの内訳','支払元','入金先','メモ','お店','収入','支出','集計の設定']);
+  }
+  var list = data.transactions || [];
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i];
+    var method = t.type === 'expense' ? 'payment' : (t.type === 'income' ? 'income' : 'transfer');
+    sheet.appendRow([
+      t.date, method, t.category, t.subcategory,
+      t.account, t.toAccount || '-', t.memo, t.store,
+      t.type === 'income' ? t.amount : '',
+      t.type !== 'income' ? t.amount : '',
+      '常に集計に含める'
+    ]);
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===================== マスタ補正（収支フラグの正規化） =====================
+/**
+ * 元データの欠陥を読み出し時に補正し、「集計の設定」列を整える（収支集計の正しさのため）。
+ * 対象：家計口座(筑波/ゆうちょ/楽天)間の内部振込（マツイ名義・自口座宛）と、ドコモDカード一括引落。
+ * ※ 口座残高はツール側で「集計フラグ非依存の全movement」で算出するため、この補正は残高に影響しない。
+ * ※ 外部企業宛の振込（北洋(株)キヤネツト 等）は内部振込ではないので対象外＝支出のまま。
+ */
+function applyDataFixes_(values) {
+  if (!values || values.length < 2) return values;
+  var H = values[0].map(function (x) { return String(x).replace(/\s/g, ''); });
+  function col(names) { for (var n = 0; n < names.length; n++) { var i = H.indexOf(names[n]); if (i >= 0) return i; } return -1; }
+  var cMethod = col(['方法']), cFrom = col(['支払元']), cTo = col(['入金先']),
+      cStore = col(['お店']), cMemo = col(['メモ', '品目']), cAgg = col(['集計の設定']);
+  if (cAgg < 0) return values;
+  var HH = /筑波|ゆうちょ|楽天/;
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    var method = cMethod >= 0 ? String(row[cMethod] || '') : '';
+    var from = cFrom >= 0 ? String(row[cFrom] || '') : '';
+    var to = cTo >= 0 ? String(row[cTo] || '') : '';
+    var store = cStore >= 0 ? String(row[cStore] || '') : '';
+    var memo = cMemo >= 0 ? String(row[cMemo] || '') : '';
+    var text = store + ' ' + memo;
+    var internal = false;
+    // 収入側：家計口座宛の「マツイ」名義入金 ＝ 内部振込（給与所得と誤ラベルのものも含む）
+    if (method === 'income' && HH.test(to) && /マツイ|ﾏﾂｲ/.test(text)) internal = true;
+    // 支出側：家計口座から「自口座宛(境支店/〇六八/スネア)」または「振込 マツイ」＝ 内部振込。外部企業宛は対象外。
+    if (method === 'payment' && HH.test(from) && /境支店|〇六八|スネア|振込\s*マツイ|振込\s*ﾏﾂｲ/.test(store)) internal = true;
+    // ドコモDカード一括引落（銀行→カード）：明細側で計上するため収支からは除外
+    var dcardSettle = (method === 'payment') && /ドコモ.*[dＤｄ]\s*カード|ドコモ.*dカード/i.test(store);
+    if (internal || dcardSettle) row[cAgg] = '集計に含めない';
+  }
+  return values;
+}
+
+// ===================== 設定同期ヘルパー（新規・独立／既存に非干渉） =====================
+function settingsSheet_(ss) {
+  var sh = ss.getSheetByName('設定');
+  if (!sh) {
+    sh = ss.insertSheet('設定');
+    sh.getRange(1, 1, 1, 3).setValues([['キー', '値(JSON)', '更新時刻']]);
+  }
+  return sh;
+}
+
+// 読み取り：設定タブが無ければ空を返す（GETで新規シートを作らない＝既存に無影響）
+function readSettings_(ss) {
+  var sh = ss.getSheetByName('設定');
+  if (!sh) return { data: {}, updatedAt: 0 };
+  var rng = sh.getDataRange().getValues();
+  var data = {}, updatedAt = 0;
+  for (var i = 1; i < rng.length; i++) {
+    var k = String(rng[i][0] || '').trim();
+    if (!k) continue;
+    if (k === '__updatedAt') { updatedAt = Number(rng[i][1]) || 0; continue; }
+    try { data[k] = JSON.parse(String(rng[i][1])); } catch (err) {}
+  }
+  return { data: data, updatedAt: updatedAt };
+}
+
+// 書き込み：設定タブへ保存（同時書込みはロックで保護）。取引データ等には触れない。
+function writeSettings_(ss, settings, clientUpdatedAt) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(5000); } catch (e) {}
+  try {
+    var sh = settingsSheet_(ss);
+    var now = Number(clientUpdatedAt) || (new Date()).getTime();
+    var rows = [];
+    Object.keys(settings).forEach(function (k) {
+      rows.push([k, JSON.stringify(settings[k]), '']);
+    });
+    rows.push(['__updatedAt', now, new Date()]);
+    var last = sh.getLastRow();
+    if (last > 1) sh.getRange(2, 1, last - 1, 3).clearContent();
+    if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
+    return now;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}`;
+function renderExcluded(){ const box=$("#excludedBox"); if(!box) return; const rows=excludedRows();
+  if(!rows.length){ box.innerHTML=`<div class="note">集計対象外の明細はありません。</div>`; return; }
+  const total=rows.reduce((a,r)=>a+(r.exp||0)+(r.inc||0),0);
+  box.innerHTML=`<div class="row2"><span class="lab">対象外 合計</span><span class="amt">${yen(total)}（${rows.length}件）</span></div>`+
+    rows.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,40).map(r=>{ const amt=(r.exp||0)>0?r.exp:r.inc; const isInc=(r.inc||0)>0;
+      const why=isDcardSettle(r)?"カード一括引落":(isATMout(r)?"ATM引出→現金":isATMin(r)?"ATM預入←現金":_oricoRaw(r)?"オリコ":"集計に含めない");
+      return `<div class="stat"><span>${esc((r.date||"").slice(5))} ${isInc?"＋":""}${esc(r.store||r.memo||r.cat||"")}<span class="badge cat">${esc(why)}</span></span><span class="amt ${isInc?'g':''}">${yen(amt)}</span></div>`; }).join(""); }
+function exportJSON(){ try{ const blob=new Blob([JSON.stringify(store)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="kakeibo_backup.json"; a.click(); toast("書き出しました"); }catch(e){ toast("書き出し失敗"); } }
+function importJSON(text){ try{ const o=JSON.parse(text); store=Object.assign(store,o); invalidateCaches(); save(); markSettingsChanged(); rebuildMonths(); renderAll(); toast("読み込みました"); }catch(e){ toast("JSON解析に失敗"); } }
+
+/* ================= PWA（Android ホーム画面アプリ化） =================
+   マニフェストとアイコンはアプリ内でcanvas生成しdata URIで埋め込む（追加画像ファイル不要）。
+   Service Worker(sw.js)だけは別ファイル（ブラウザ仕様上、外部URLが必須）。 */
+function pwaIcon(size, maskable){
+  try{
+    const c=document.createElement("canvas"); c.width=c.height=size; const g=c.getContext("2d"); if(!g) return "";
+    g.fillStyle="#0E1413"; g.fillRect(0,0,size,size);
+    const pad=maskable?Math.round(size*0.12):Math.round(size*0.06);
+    const r=Math.round((size-pad*2)*0.22), x0=pad, y0=pad, w=size-pad*2, h=size-pad*2;
+    g.fillStyle="#12302A"; g.beginPath();
+    g.moveTo(x0+r,y0); g.arcTo(x0+w,y0,x0+w,y0+h,r); g.arcTo(x0+w,y0+h,x0,y0+h,r); g.arcTo(x0,y0+h,x0,y0,r); g.arcTo(x0,y0,x0+w,y0,r); g.closePath(); g.fill();
+    g.fillStyle="#35C6A6"; g.textAlign="center"; g.textBaseline="middle";
+    g.font="bold "+Math.round(h*0.6)+"px -apple-system,'Hiragino Sans','Noto Sans JP',sans-serif";
+    g.fillText("¥", size/2, size/2+h*0.03);
+    return c.toDataURL("image/png");
+  }catch(e){ return ""; }
+}
+function setupManifest(){
+  try{
+    const base=location.href.split(/[?#]/)[0]; const dir=base.replace(/[^/]*$/,"");
+    const i192=pwaIcon(192,false), i512=pwaIcon(512,false), iMask=pwaIcon(512,true), iApple=pwaIcon(180,false);
+    const icons=[]; if(i192)icons.push({src:i192,sizes:"192x192",type:"image/png",purpose:"any"});
+    if(i512)icons.push({src:i512,sizes:"512x512",type:"image/png",purpose:"any"});
+    if(iMask)icons.push({src:iMask,sizes:"512x512",type:"image/png",purpose:"maskable"});
+    const manifest={ name:"Kakeibo 家計簿", short_name:"Kakeibo", start_url:base, scope:dir,
+      display:"standalone", orientation:"portrait", background_color:"#0E1413", theme_color:"#12302A", lang:"ja", icons };
+    const href="data:application/manifest+json;charset=utf-8,"+encodeURIComponent(JSON.stringify(manifest));
+    let link=document.getElementById("manifestLink"); if(!link){ link=document.createElement("link"); link.rel="manifest"; link.id="manifestLink"; document.head.appendChild(link); }
+    link.setAttribute("href",href);
+    if(iApple){ let al=document.querySelector('link[rel="apple-touch-icon"]'); if(!al){ al=document.createElement("link"); al.rel="apple-touch-icon"; document.head.appendChild(al);} al.setAttribute("href",iApple); }
+  }catch(e){ console.warn("manifest生成失敗",e); }
+}
+let __deferredPrompt=null;
+function pwaStandalone(){ try{ return (window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||window.navigator.standalone===true; }catch(e){ return false; } }
+function showInstallBtn(show){ const b=document.getElementById("installBtn"); if(b) b.style.display=show?"block":"none"; const st=document.getElementById("pwaState"); if(st) st.textContent=pwaStandalone()?"✓ アプリとして起動中":(show?"「ホーム画面にアプリを追加」で全画面アプリになります":"インストール可能になると自動でボタンが表示されます（またはChromeメニュー→「アプリをインストール」）"); }
+function setupInstall(){
+  window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); __deferredPrompt=e; showInstallBtn(true); });
+  window.addEventListener("appinstalled", ()=>{ __deferredPrompt=null; showInstallBtn(false); toast("インストールしました"); });
+  showInstallBtn(!pwaStandalone() && !!__deferredPrompt);
+}
+async function doInstall(){ if(!__deferredPrompt){ toast("Chromeの︙メニュー →「アプリをインストール」から追加できます"); return; } __deferredPrompt.prompt(); try{ await __deferredPrompt.userChoice; }catch(e){} __deferredPrompt=null; showInstallBtn(false); }
+function registerSW(){ if(!("serviceWorker" in navigator)) return; try{ navigator.serviceWorker.register("./sw.js").catch(e=>console.warn("SW登録失敗",e)); }catch(e){} }
+function initPWA(){ setupManifest(); setupInstall(); registerSW(); }
+
+/* ================= ナビ / 描画 / 起動 ================= */
+const NAV=[
+  {id:"list",label:"明細",svg:'<path d="M4 6h16M4 12h16M4 18h10"/>'},
+  {id:"deposit",label:"預金",svg:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/>'},
+  {id:"fixed",label:"固定費",svg:'<path d="M12 2v20M5 8l7-6 7 6"/><rect x="6" y="10" width="12" height="10" rx="1"/>'},
+  {id:"ana",label:"分析",svg:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'},
+  {id:"settings",label:"データ",svg:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>'},
+];
+let cur="list";
+function buildNav(){ $("#nav").innerHTML=NAV.map(n=>`<button data-id="${n.id}"><svg viewBox="0 0 24 24">${n.svg}</svg>${n.label}</button>`).join("");
+  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.id)); }
+function go(id){ cur=id; document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active")); const el=$("#s-"+id); if(el) el.classList.add("active");
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.id===id)); renderAll(); }
+function renderAll(){ try{ if(cur==="list") renderList(); else if(cur==="deposit") renderDeposit(); else if(cur==="fixed") renderFixed(); else if(cur==="ana") renderAnalysis(); else if(cur==="settings") renderSettings(); }catch(e){ console.error(e); toast("表示エラー("+cur+"): "+(e&&e.message||e)); } }
+
+function init(){
+  buildNav();
+  initPWA();
+  loadLocal(); if(!store.opening||store.opening["筑波"]==null) store.opening=Object.assign({},DEFAULT_OPENING,store.opening||{});
+  store.catRules=store.catRules||{}; store.fixRules=store.fixRules||{}; store.incomes=store.incomes||{}; store.loans=store.loans||{}; store.customCats=store.customCats||[];
+  rebuildMonths();
+  // 月ナビ
+  $("#lPrev").onclick=()=>{ listMonth=addMonths(listMonth,-1); renderList(); };
+  $("#lNext").onclick=()=>{ listMonth=addMonths(listMonth,1); renderList(); };
+  $("#dPrev").onclick=()=>{ depMonth=addMonths(depMonth,-1); renderDeposit(); };
+  $("#dNext").onclick=()=>{ depMonth=addMonths(depMonth,1); renderDeposit(); };
+  $("#anaSel").onchange=e=>{ anaSel=e.target.value; renderAnalysis(); };
+  $("#anaCatSel").onchange=e=>{ anaCat=e.target.value; renderAnalysis(); };
+  // 設定バインド
+  $("#reloadBtn").onclick=()=>loadFromSheet(false);
+  $("#installBtn").onclick=()=>doInstall();
+  $("#syncNowBtn").onclick=()=>syncNow();
+  $("#copyGas").onclick=()=>{ const ta=$("#gasCode"); if(ta){ ta.select(); try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value); else document.execCommand("copy"); toast("GASコードをコピーしました"); }catch(e){ toast("手動で選択してコピーしてください"); } } };
+  $("#saveUrlBtn").onclick=()=>{ store.sheetsUrl=($("#sheetsUrl").value||"").trim(); save(); loadFromSheet(false); };
+  $("#obSave").onclick=()=>{ store.opening={"筑波":+($("#obT").value||0),"ゆうちょ":+($("#obY").value||0),"楽天":+($("#obR").value||0),"現金":Number((store.opening||{})["現金"]||0),"_from":$("#obFrom").value||"2026-04-02"}; store.savingsAcct=$("#savAcct").value; invalidateCaches(); save(); markSettingsChanged(); renderAll(); toast("初期設定を保存しました"); };
+  $("#csvLoad").onclick=()=>loadCSVText($("#csvText").value);
+  $("#csvFileBtn").onclick=()=>$("#csvFile").click();
+  $("#csvFile").onchange=e=>{ const f=e.target.files[0]; if(f) handleFile(f); e.target.value=""; };
+  $("#csvSample").onclick=()=>loadSample();
+  $("#exportBtn").onclick=()=>exportJSON();
+  $("#importBtn").onclick=()=>$("#importFile").click();
+  $("#importFile").onchange=e=>{ const f=e.target.files[0]; if(f){ const rd=new FileReader(); rd.onload=()=>importJSON(rd.result); rd.readAsText(f); } e.target.value=""; };
+  $("#clearAll").onclick=()=>{ if(confirm("この端末の表示と手動編集を消去します（スプシ元データ・共有設定は消えません）。よろしいですか？")){ const url=store.sheetsUrl; store={_raw:[],opening:Object.assign({},DEFAULT_OPENING),catRules:{},fixRules:{},customCats:[],incomes:{},loans:{},savingsAcct:"ゆうちょ",cashManual:0,sheetsUrl:url,excludeSelfTransfer:true,settingsUpdatedAt:0,settingsSyncedAt:0,settingsDirty:false}; invalidateCaches(); save(); loadFromSheet(false); toast("消去しました。共有設定を再取得します"); } };
+  go("list");
+  (async()=>{ renderAll(); const ok=await loadFromSheet(true); if(!ok&&(!store._raw||!store._raw.length)){ await loadFromSheet(false); } startAutoSync(); })();
+}
+
+/* ---------- サンプルデータ ---------- */
+const SAMPLE_CSV=[
+"日付,方法,カテゴリ,カテゴリの内訳,支払元,入金先,品目,メモ,お店,通貨,収入,支出,振替,残高調整,通貨変換前の金額,集計の設定",
+"2026-06-25,income,給与,給料,-,筑波銀行 サンプル支店 普通 ****000,,,給与振込,JPY,300000,0,0,0,300000,常に集計に含める",
+"2026-06-05,payment,水道・光熱,電気,筑波銀行 サンプル支店 普通 ****000,-,,,サンプル電力,JPY,0,8000,0,0,8000,常に集計に含める",
+"2026-06-08,payment,通信,携帯,dカード,-,,,ドコモ通信,JPY,0,6000,0,0,6000,常に集計に含める",
+"2026-06-10,payment,その他,カードの引落,筑波銀行 サンプル支店 普通 ****000,-,,,ドコモDカード,JPY,0,50000,0,0,50000,常に集計に含める",
+"2026-06-15,payment,その他,現金の引出,筑波銀行 サンプル支店 普通 ****000,-,,,ATM から現金引出,JPY,0,20000,0,0,20000,集計に含めない",
+"2026-06-15,income,その他,振込,-,ゆうちょ銀行 サンプル店 総合 ****000,,,児童手当,JPY,30000,0,0,0,30000,常に集計に含める",
+"2026-06-03,payment,食費,食料品,dカード,-,,,サンプルスーパー,JPY,0,5000,0,0,5000,常に集計に含める",
+"2026-06-12,payment,食費,食料品,dカード,-,,,サンプルスーパー,JPY,0,4200,0,0,4200,常に集計に含める",
+"2026-06-18,payment,借入,返済,筑波銀行 サンプル支店 普通 ****000,-,,,奨学金返済,JPY,0,15000,0,0,15000,常に集計に含める",
+"2026-06-28,payment,交通,電車,dカード,-,,,サンプル鉄道,JPY,0,2000,0,0,2000,常に集計に含める",
+"2026-07-02,payment,食費,カフェ,dカード,-,,,サンプルカフェ,JPY,0,1500,0,0,1500,常に集計に含める",
+"2026-07-05,payment,水道・光熱,電気,筑波銀行 サンプル支店 普通 ****000,-,,,サンプル電力,JPY,0,7600,0,0,7600,常に集計に含める"
+].join("\n");
+function loadSample(){ store.opening={"筑波":500000,"ゆうちょ":300000,"楽天":0,"_from":"2026-06-01"}; loadCSVText(SAMPLE_CSV); toast("サンプルデータを読み込みました"); }
+
+document.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>
