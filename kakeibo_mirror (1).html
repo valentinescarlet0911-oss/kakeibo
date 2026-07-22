@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>元帳ベース家計簿</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:#EBEEE7;overflow-x:hidden;width:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+  #root{width:100%;overflow-x:hidden;}
+  input,select,button,textarea{font-family:inherit;}
+  .val{overflow-wrap:anywhere;word-break:break-word;}
+</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+/* ================= 家計簿ミラー v2（GAS /exec + 予定明細レイヤー） =================
+   ・実績（スプシ/GAS集計）＝payloadをそのまま表示（数字はGASと一致）
+   ・予定明細＝ツール上で手動入力する未来の明細（localStorage）。実績に上乗せ表示
+   ・「実績のみ / 予定込み」でどのページも切替可能。予定は赤で表示
+================================================================================ */
+const T = { bg:"#EBEEE7", surface:"#FBFCF9", surface2:"#F3F5EF", line:"#D3D9CD", lineSoft:"#E2E7DB", ink:"#1B2A22", sub:"#5C6A5F", faint:"#8A968C", green:"#2E7D5B", greenDeep:"#1B5E45", greenSoft:"#E4EFE7", clay:"#AE4F37", claySoft:"#F3E2DC", gold:"#9C7A2E", goldSoft:"#F0E9D6", ink10:"#E7EBE3", red:"#D7263D", redSoft:"#FBE3E6" };
+const MONO = 'ui-monospace, "SF Mono", "Menlo", "Consolas", monospace';
+const SANS = '-apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif';
+const LS_URL="kakeibo:mirror:url", LS_LOANS="kakeibo:mirror:loans", LS_CACHE="kakeibo:mirror:cache", LS_MANUAL="kakeibo:mirror:manual", LS_MODE="kakeibo:mirror:mode";
+
+const ACCOUNTS = [
+  { id:"筑波", name:"筑波銀行", kind:"bank", color:"#2E7D5B" },
+  { id:"ゆうちょ", name:"ゆうちょ銀行", kind:"bank", color:"#9C7A2E" },
+  { id:"楽天", name:"楽天銀行", kind:"bank", color:"#AE4F37" },
+  { id:"財布", name:"財布（現金+Suica）", kind:"cash", color:"#5C6A5F" },
+  { id:"dカード", name:"dカード", kind:"card", color:"#1B2A22" },
+];
+const ACCT_COLOR = ACCOUNTS.reduce((o,a)=>{o[a.id]=a.color;return o;},{});
+const SAVINGS_ID="ゆうちょ";
+const CASH_ACCS=["筑波","ゆうちょ","楽天","財布"];
+const KUBUNS=["変動費","固定費","返済費","収入","カード利用","カード引落","口座間振替","チャージ","現金移動"];
+
+/* ------------- 汎用 ------------- */
+const yen=(n)=>(n<0?"-¥":"¥")+Math.abs(Math.round(n||0)).toLocaleString("ja-JP");
+const ymOf=(d)=>(d||"").slice(0,7);
+const mLabel=(m)=>`${+String(m).slice(5,7)}月`;
+const mLabelY=(m)=>`${String(m).slice(0,4)}/${String(m).slice(5,7)}`;
+const pad2=(n)=>String(n).padStart(2,"0");
+const todayStr=()=>{const d=new Date();return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;};
+const curMonthStr=()=>todayStr().slice(0,7);
+const addMonthStr=(m,n)=>{let y=+m.slice(0,4),mo=+m.slice(5,7)-1+n;y+=Math.floor(mo/12);mo=((mo%12)+12)%12;return `${y}-${pad2(mo+1)}`;};
+const sameDayLastMonth=(dateStr)=>{const [y,m,d]=dateStr.split("-").map(Number);const pm=new Date(y,m-2,1);const last=new Date(pm.getFullYear(),pm.getMonth()+1,0).getDate();return `${pm.getFullYear()}-${pad2(pm.getMonth()+1)}-${pad2(Math.min(d,last))}`;};
+const uniq=(a)=>[...new Set(a.filter((x)=>x!=null&&x!==""))];
+const acctId=(name)=>{const s=name||"";if(/筑波|つくば/.test(s))return "筑波";if(/ゆうちょ|郵便/.test(s))return "ゆうちょ";if(/楽天/.test(s))return "楽天";if(/Suica|現金|財布/i.test(s))return "財布";if(/d\s*カード|ｄ\s*カード|dcard/i.test(s))return "dカード";return null;};
+const dcardBillMonth=(d)=>{let m=(d||"").slice(0,7),day=+(d||"").slice(8,10);if(!/^\d{4}-\d{2}$/.test(m))return m;return day>=16?addMonthStr(m,2):addMonthStr(m,1);};
+
+/* ------------- 予定明細 → item ------------- */
+function manToItem(e){
+  const inc=e.kubun==="収入"?e.amount:0, exp=e.kubun==="収入"?0:e.amount;
+  return { date:e.useDate, from:e.from, to:e.to, store:e.store, memo:"", inc, exp, kind:e.kubun, tag:e.kubun, ym:e.billMonth, billDate:e.billDate, useDate:e.useDate, acctFrom:acctId(e.from), acctTo:acctId(e.to), agg:e.include?"":"集計に含めない", manual:true, id:e.id };
+}
+
+/* ------------- エンジン（payload実績 + 予定レイヤー） ------------- */
+function useEngine(payload, manualAll, mode){
+  return useMemo(()=>{
+    const P=payload||{ok:false};
+    const gasMonths=(P.months||[]).filter((m)=>P.balance&&P.balance[m]);
+    const lastGas=gasMonths[gasMonths.length-1]||curMonthStr();
+    const man = mode==="plan" ? (manualAll||[]) : [];
+    const manItems = man.map(manToItem);
+    const detailAll = (P.detail||[]).concat(manItems);
+    const manMonths = uniq(man.map((e)=>e.billMonth));
+    const months = uniq([...gasMonths, ...manMonths]).sort();
+    const anchor=P.anchor||{}, anchorFrom=P.anchorFrom||"2026-04-02", walletInit=P.walletInit||0;
+
+    const gasBal=(acct,m)=>{const b=P.balance&&P.balance[m];if(!b)return null;return acct==="財布"?b.wallet:acct==="dカード"?-b.cardOutstanding:b[acct];};
+    const cardOutOf=(m)=>{let base=(P.balance&&P.balance[m])?P.balance[m].cardOutstanding:((P.balance&&P.balance[lastGas])?P.balance[lastGas].cardOutstanding:0);let d=0;man.forEach((e)=>{if(e.billMonth<=m){if(e.kubun==="カード引落")d-=e.amount;else if(acctId(e.from)==="dカード"&&e.kubun!=="収入")d+=e.amount;}});return base+d;};
+    const balanceOf=(acct,m)=>{if(acct==="dカード")return -cardOutOf(m);let base=(P.balance&&P.balance[m])?gasBal(acct,m):gasBal(acct,lastGas);base=base||0;let d=0;man.forEach((e)=>{if(e.billMonth<=m){const inc=e.kubun==="収入"?e.amount:0,exp=e.kubun==="収入"?0:e.amount;if(acctId(e.to)===acct)d+=inc;if(acctId(e.from)===acct)d-=exp;}});return base+d;};
+    const netWorthOf=(m)=>balanceOf("筑波",m)+balanceOf("ゆうちょ",m)+balanceOf("楽天",m)-cardOutOf(m);
+    const monthlyOf=(m)=>{const b=(P.monthly&&P.monthly[m])||{inc:0,fixed:0,variable:0,repay:0};const r={inc:b.inc,fixed:b.fixed,variable:b.variable,repay:b.repay};man.forEach((e)=>{if(e.billMonth===m&&e.include){const a=e.amount;if(e.kubun==="収入")r.inc+=a;else if(e.kubun==="固定費")r.fixed+=a;else if(e.kubun==="返済費")r.repay+=a;else if(e.kubun==="変動費"||e.kubun==="カード利用")r.variable+=a;}});return r;};
+
+    // breakdown（実績 + 予定）月別
+    const bdOf=(m)=>{
+      const base=(P.breakdown||[]).filter((b)=>b.ym===m).map((b)=>({...b,manual:false}));
+      const mm=man.filter((e)=>e.billMonth===m&&e.include&&e.kubun!=="収入"&&e.kubun!=="カード引落"&&e.kubun!=="口座間振替"&&e.kubun!=="現金移動"&&e.kubun!=="チャージ")
+        .map((e)=>({ym:e.billMonth,billDate:e.billDate,batchId:"",kubun:(e.kubun==="カード利用"?"変動費":e.kubun),from:e.from,name:e.store||"(予定)",amount:e.amount,useDate:e.useDate,cat:(e.kubun==="変動費"||e.kubun==="カード利用")?"予定":e.kubun,manual:true}));
+      return base.concat(mm);
+    };
+
+    // 任意日残高（同日比較用・detailから積み上げ）
+    const balAsOf=(acct,date)=>{
+      let v=acct==="財布"?walletInit:(anchor[acct]||0);
+      for(const it of detailAll){ if(!it.date||it.date<anchorFrom||it.date>date)continue; if(it.kind==="残高補正")continue;
+        if(acct==="財布"){ if(it.kind==="現金移動"){ if(it.exp>0)v+=it.exp; if(it.inc>0)v-=it.inc; } else { if(it.acctTo==="財布")v+=it.inc; if(it.acctFrom==="財布")v-=it.exp; if(it.kind==="チャージ")v+=it.exp; } }
+        else { if(it.acctTo===acct)v+=it.inc; if(it.acctFrom===acct)v-=it.exp; }
+      } return v;
+    };
+    const cardOutAsOf=(date)=>{let s=0;for(const it of detailAll){if(!it.date)continue;if((it.kind==="カード利用"||it.kind==="チャージ")&&it.exp>0){const bd=dcardBillMonth(it.date)+"-10";if(bd>date)s+=it.exp;}}return s;};
+    const netWorthAsOf=(date)=>balAsOf("筑波",date)+balAsOf("ゆうちょ",date)+balAsOf("楽天",date)-cardOutAsOf(date);
+
+    return { P, ok:!!P.ok, months, gasMonths, lastGas, detailAll, manItems, man, balanceOf, cardOutOf, netWorthOf, monthlyOf, bdOf, balAsOf, cardOutAsOf, netWorthAsOf,
+      stores:uniq((P.detail||[]).map((d)=>d.store)), froms:uniq((P.detail||[]).map((d)=>d.from)), tos:uniq((P.detail||[]).map((d)=>d.to)) };
+  },[payload, manualAll, mode]);
+}
+
+/* ------------- UI 部品 ------------- */
+function Card({children,style}){return <div style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:18,...style}}>{children}</div>;}
+function Eyebrow({children}){return <div style={{fontSize:11,letterSpacing:2,textTransform:"uppercase",color:T.faint,fontWeight:700}}>{children}</div>;}
+function Num({v,size=22,color,bold=700}){const c=color||(v<0?T.clay:T.ink);return <span style={{fontFamily:MONO,fontVariantNumeric:"tabular-nums",fontSize:size,fontWeight:bold,color:c,letterSpacing:-0.5}}>{yen(v)}</span>;}
+function LineChart({series,labels,height=120,colors}){
+  const all=series.flat();const max=Math.max(...all,0),min=Math.min(...all,0);const pad=(max-min)*0.12||1;const hi=max+pad,lo=min-pad;const W=320,H=height,px=6;
+  const x=(i,len)=>px+(i/Math.max(len-1,1))*(W-px*2);const y=(v)=>H-18-((v-lo)/(hi-lo))*(H-30);
+  return (<svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height}}>
+    {min<0&&<line x1={px} x2={W-px} y1={y(0)} y2={y(0)} stroke={T.line} strokeDasharray="3 3"/>}
+    {series.map((s,si)=>(<g key={si}><polyline fill="none" stroke={colors[si]} strokeWidth="2.5" strokeLinejoin="round" points={s.map((v,i)=>`${x(i,s.length)},${y(v)}`).join(" ")}/>{s.map((v,i)=><circle key={i} cx={x(i,s.length)} cy={y(v)} r="3" fill={colors[si]}/>)}</g>))}
+    {labels.map((l,i)=><text key={i} x={x(i,labels.length)} y={H-4} fontSize="10" fill={T.faint} textAnchor="middle" fontFamily={SANS}>{l}</text>)}
+  </svg>);
+}
+function BarRow({label,value,max,color,right,onClick,sub}){
+  const w=max>0?Math.max((value/max)*100,1.5):0;
+  return (<div onClick={onClick} style={{marginBottom:10,cursor:onClick?"pointer":"default"}}>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4,color:T.ink,gap:8}}><span className="val" style={{minWidth:0}}>{label}{sub!=null&&<span style={{color:T.faint,fontSize:11,marginLeft:6}}>{sub}</span>}</span><span style={{fontFamily:MONO,fontVariantNumeric:"tabular-nums",color:color===T.red?T.red:T.sub,whiteSpace:"nowrap"}}>{right??yen(value)}</span></div>
+    <div style={{height:8,background:T.ink10,borderRadius:6}}><div style={{width:`${w}%`,height:"100%",background:color,borderRadius:6}}/></div>
+  </div>);
+}
+const inp={width:"100%",boxSizing:"border-box",border:`1px solid ${T.line}`,borderRadius:8,padding:"10px 12px",fontSize:14,fontFamily:SANS,marginBottom:14,background:T.surface,color:T.ink,outline:"none"};
+const btnPrimary={width:"100%",cursor:"pointer",background:T.greenDeep,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:15,fontWeight:700};
+function Field({label,children}){return <div style={{marginBottom:12}}><div style={{fontSize:12,color:T.sub,marginBottom:6,fontWeight:600}}>{label}</div>{children}</div>;}
+function Chip({on,onClick,children,color}){const c=color||T.greenDeep;return <button onClick={onClick} style={{cursor:"pointer",fontSize:12,padding:"7px 12px",borderRadius:8,border:`1px solid ${on?c:T.line}`,background:on?c:T.surface,color:on?"#fff":T.sub,fontWeight:600}}>{children}</button>;}
+function Modal({title,children,onClose}){
+  return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(20,30,25,.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:50}}>
+    <div onClick={(e)=>e.stopPropagation()} style={{background:T.bg,width:"100%",maxWidth:440,maxHeight:"90vh",overflowY:"auto",borderRadius:"18px 18px 0 0",padding:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontSize:17,fontWeight:800,color:T.ink}}>{title}</div>{onClose&&<button onClick={onClose} style={{cursor:"pointer",border:"none",background:T.ink10,borderRadius:8,width:30,height:30,fontSize:16,color:T.sub}}>×</button>}</div>
+      {children}
+    </div>
+  </div>);
+}
+function MonthChips({months,value,onChange}){
+  return (<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+    {months.slice(-8).map((m)=>{const future=m>curMonthStr();return <button key={m} onClick={()=>onChange(m)} style={{cursor:"pointer",fontSize:12,padding:"5px 12px",borderRadius:8,border:`1px solid ${value===m?(future?T.red:T.ink):T.line}`,background:value===m?(future?T.red:T.ink):T.surface,color:value===m?"#fff":(future?T.red:T.sub),fontWeight:600}}>{mLabelY(m)}{future?" 予定":""}</button>;})}
+  </div>);
+}
+const RED_TAG=<span style={{fontSize:9,marginLeft:6,color:"#fff",background:T.red,borderRadius:3,padding:"1px 5px",fontWeight:700}}>予定</span>;
+
+/* ================= P0 全資産 ================= */
+function P0({eng,mode,go}){
+  const months=eng.months; const [m,setM]=useState(eng.lastGas);
+  useEffect(()=>{ if(!months.includes(m)) setM(eng.lastGas); },[eng.lastGas]);
+  if(!months.length) return <Empty/>;
+  const rows=ACCOUNTS.map((a)=>({...a,bal:eng.balanceOf(a.id,m)}));
+  const netWorth=eng.netWorthOf(m); const wallet=eng.balanceOf("財布",m);
+  const trend=months.slice(-6); const nwSeries=trend.map((x)=>eng.netWorthOf(x));
+  const future=m>curMonthStr();
+  const td=todayStr(), pm=sameDayLastMonth(td);
+  return (
+    <div>
+      {months.length>1&&<div style={{marginBottom:12}}><Eyebrow>表示月</Eyebrow><div style={{marginTop:8}}><MonthChips months={months} value={m} onChange={setM}/></div></div>}
+      <Card style={{background:future?T.red:T.greenDeep,borderColor:future?T.red:T.greenDeep,color:"#fff"}}>
+        <Eyebrow><span style={{color:future?"#FBD5DA":"#B9D6C6"}}>純資産（{mLabelY(m)}末・銀行−カード）{future?"／予定込み":""}</span></Eyebrow>
+        <div style={{margin:"8px 0 2px"}}><span style={{fontFamily:MONO,fontVariantNumeric:"tabular-nums",fontSize:38,fontWeight:800,letterSpacing:-1}} className="val">{yen(netWorth)}</span></div>
+        <div style={{fontSize:13,color:future?"#FBD5DA":"#B9D6C6"}}>財布（現金+Suica・別枠/不確実） {yen(wallet)}</div>
+        <div style={{marginTop:14,background:"rgba(255,255,255,.08)",borderRadius:10,padding:"10px 8px"}}><LineChart series={[nwSeries]} labels={trend.map(mLabel)} colors={[future?"#F6B8C0":"#8FD3B0"]} height={110}/></div>
+      </Card>
+      <div style={{marginTop:16}}>
+        <Eyebrow>口座別（タップで収支管理へ）</Eyebrow>
+        {mode==="plan"&&<div style={{fontSize:11,color:T.red,marginTop:6}}>予定込み表示のため前月比は非表示です。</div>}
+        <div style={{marginTop:10,display:"grid",gap:10}}>
+          {rows.map((r)=>{
+            const diffSameDay=(mode!=="plan")?(eng.balAsOf(r.id,td)-eng.balAsOf(r.id,pm)):null;
+            return (<button key={r.id} onClick={()=>go("p1",{account:r.id})} style={{textAlign:"left",cursor:"pointer",background:T.surface,border:`1px solid ${T.line}`,borderRadius:12,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:15,fontWeight:600,color:T.ink}} className="val"><span style={{display:"inline-block",width:8,height:8,borderRadius:8,background:r.color,marginRight:7}}/>{r.name}
+                  {r.kind==="card"&&<span style={{fontSize:10,marginLeft:6,color:T.clay,border:`1px solid ${T.claySoft}`,background:T.claySoft,borderRadius:4,padding:"1px 5px"}}>負債（未払い）</span>}
+                  {r.id===SAVINGS_ID&&<span style={{fontSize:10,marginLeft:6,color:T.green,border:`1px solid ${T.greenSoft}`,background:T.greenSoft,borderRadius:4,padding:"1px 5px"}}>貯蓄先</span>}
+                  {r.kind==="cash"&&<span style={{fontSize:10,marginLeft:6,color:T.gold,border:`1px solid ${T.goldSoft}`,background:T.goldSoft,borderRadius:4,padding:"1px 5px"}}>別枠</span>}
+                </div>
+                {diffSameDay!=null&&<div style={{fontSize:11,color:T.faint,marginTop:3}}>前月同日比（{pm.slice(5)}→{td.slice(5)}） <span style={{color:diffSameDay<0?T.clay:T.green,fontFamily:MONO,fontWeight:700}}>{diffSameDay>=0?"+":""}{yen(diffSameDay).replace("¥","")}</span></div>}
+              </div>
+              <Num v={r.bal} size={18}/>
+            </button>);
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= P1 収支管理 ================= */
+function P1({eng,mode,ctx}){
+  const months=eng.months;
+  const init=ctx&&ctx.account&&CASH_ACCS.includes(ctx.account)?ctx.account:"筑波";
+  const [sel,setSel]=useState(()=>new Set([init]));
+  const [month,setMonth]=useState(months.includes(eng.lastGas)?eng.lastGas:months[months.length-1]);
+  const [dayPanel,setDayPanel]=useState(null);
+  const [showBal,setShowBal]=useState(false);
+  useEffect(()=>{ if(!months.includes(month)) setMonth(eng.lastGas); },[eng.lastGas]);
+  if(!month) return <Empty/>;
+  const toggle=(id)=>{const s=new Set(sel);if(id==="all")return setSel(new Set(CASH_ACCS));s.has(id)?s.delete(id):s.add(id);setSel(s.size?s:new Set(["筑波"]));};
+  // 日次（口座別）
+  const perDay={}; let income=0,expense=0;
+  eng.detailAll.forEach((it)=>{ if(ymOf(it.date)!==month)return;
+    if(it.inc>0&&CASH_ACCS.includes(it.acctTo)&&sel.has(it.acctTo)){ (perDay[it.date]=perDay[it.date]||{net:0,acc:{},items:[]}); perDay[it.date].net+=it.inc; perDay[it.date].acc[it.acctTo]=(perDay[it.date].acc[it.acctTo]||0)+it.inc; perDay[it.date].items.push({acct:it.acctTo,amt:it.inc,name:it.store||it.memo||"入金",manual:!!it.manual,tag:it.tag}); income+=it.inc; }
+    if(it.exp>0&&CASH_ACCS.includes(it.acctFrom)&&sel.has(it.acctFrom)){ (perDay[it.date]=perDay[it.date]||{net:0,acc:{},items:[]}); perDay[it.date].net-=it.exp; perDay[it.date].acc[it.acctFrom]=(perDay[it.date].acc[it.acctFrom]||0)-it.exp; perDay[it.date].items.push({acct:it.acctFrom,amt:-it.exp,name:it.store||it.memo||"出金",manual:!!it.manual,tag:it.tag}); expense-=it.exp; }
+  });
+  const endBal=[...sel].reduce((s,id)=>s+eng.balanceOf(id,month),0);
+  const [y,mo]=month.split("-").map(Number);
+  const firstDow=new Date(y,mo-1,1).getDay(); const days=new Date(y,mo,0).getDate();
+  const cells=[...Array(firstDow).fill(null),...Array.from({length:days},(_,i)=>i+1)];
+  const future=month>curMonthStr();
+  return (
+    <div>
+      <Card>
+        <Eyebrow>口座（複数選択可・現金系）</Eyebrow>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+          {[{id:"all",name:"全て",color:T.greenDeep},...ACCOUNTS.filter((a)=>CASH_ACCS.includes(a.id))].map((a)=>{const on=a.id==="all"?sel.size===CASH_ACCS.length:sel.has(a.id);return <button key={a.id} onClick={()=>toggle(a.id)} style={{cursor:"pointer",fontSize:12,padding:"6px 11px",borderRadius:20,border:`1px solid ${on?a.color:T.line}`,background:on?a.color:T.surface,color:on?"#fff":T.sub,fontWeight:600}}>{a.id!=="all"&&<span style={{display:"inline-block",width:7,height:7,borderRadius:7,background:on?"#fff":a.color,marginRight:5}}/>}{a.name}</button>;})}
+        </div>
+        <div style={{marginTop:12}}><MonthChips months={months} value={month} onChange={(x)=>{setMonth(x);setDayPanel(null);}}/></div>
+      </Card>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginTop:14}}>
+        <Card style={{padding:12}}><Eyebrow>入金</Eyebrow><div style={{marginTop:4}}><Num v={income} size={15} color={T.green}/></div></Card>
+        <Card style={{padding:12}}><Eyebrow>出金</Eyebrow><div style={{marginTop:4}}><Num v={expense} size={15}/></div></Card>
+        <button onClick={()=>setShowBal(true)} style={{cursor:"pointer",textAlign:"left",background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:12}}><Eyebrow>月末残高 ⓘ</Eyebrow><div style={{marginTop:4}}><Num v={endBal} size={15} color={T.ink}/></div></button>
+      </div>
+      <Card style={{marginTop:14}}>
+        <Eyebrow>日次収支カレンダー（口座の入出金）{future?"／予定含む":""}</Eyebrow>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginTop:10}}>
+          {["日","月","火","水","木","金","土"].map((d)=><div key={d} style={{textAlign:"center",fontSize:10,color:T.faint,fontWeight:700}}>{d}</div>)}
+          {cells.map((c,i)=>{ if(c===null)return <div key={i}/>; const ds=`${month}-${pad2(c)}`; const info=perDay[ds]; const v=info?info.net:null; const hasMan=info&&info.items.some((x)=>x.manual);
+            return (<button key={i} onClick={()=>info&&setDayPanel(ds)} style={{cursor:info?"pointer":"default",aspectRatio:"1",borderRadius:8,border:`1px solid ${dayPanel===ds?T.ink:(info?T.lineSoft:"transparent")}`,background:info?(v<0?(hasMan?T.redSoft:T.claySoft):T.greenSoft):"transparent",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:2}}>
+              <span style={{fontSize:10,color:hasMan?T.red:T.sub}}>{c}</span>
+              {v!=null&&<span style={{fontSize:8.5,fontFamily:MONO,fontWeight:700,color:hasMan?T.red:(v<0?T.clay:T.greenDeep),lineHeight:1.1,marginTop:1}}>{v<0?"":"+"}{Math.round(v/1000)}k</span>}
+              {info&&sel.size>1&&<div style={{display:"flex",gap:1,marginTop:1}}>{Object.keys(info.acc).map((a)=><span key={a} style={{width:4,height:4,borderRadius:4,background:ACCT_COLOR[a]}}/>)}</div>}
+            </button>);
+          })}
+        </div>
+        <div style={{fontSize:11,color:T.faint,marginTop:8}}>日をタップ → 下にその日の合計と内訳（口座別）を表示</div>
+      </Card>
+      {dayPanel&&perDay[dayPanel]&&(()=>{const info=perDay[dayPanel];return (
+        <Card style={{marginTop:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><Eyebrow>{dayPanel} の収支</Eyebrow><button onClick={()=>setDayPanel(null)} style={{border:"none",background:T.ink10,borderRadius:6,padding:"2px 8px",cursor:"pointer",color:T.sub,fontSize:12}}>閉じる</button></div>
+          <div style={{margin:"8px 0"}}><Num v={info.net} size={22}/></div>
+          <div style={{fontSize:11,color:T.faint,marginBottom:6}}>口座別</div>
+          {Object.entries(info.acc).map(([a,amt])=><div key={a} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",borderTop:`1px solid ${T.lineSoft}`}}><span><span style={{display:"inline-block",width:8,height:8,borderRadius:8,background:ACCT_COLOR[a],marginRight:6}}/>{a}</span><span style={{fontFamily:MONO,color:amt<0?T.clay:T.green}}>{amt>=0?"+":""}{yen(amt).replace("¥","¥")}</span></div>)}
+          <div style={{fontSize:11,color:T.faint,margin:"10px 0 4px"}}>明細</div>
+          {info.items.map((it,idx)=><div key={idx} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"4px 0",color:it.manual?T.red:T.ink}} className="val"><span style={{minWidth:0}}>{it.name}{it.manual&&RED_TAG} <span style={{color:T.faint}}>· {it.acct}</span></span><span style={{fontFamily:MONO,whiteSpace:"nowrap"}}>{it.amt>=0?"+":""}{yen(it.amt).replace("¥","¥")}</span></div>)}
+        </Card>
+      );})()}
+      {showBal&&<BalanceModal eng={eng} sel={[...sel]} month={month} endBal={endBal} onClose={()=>setShowBal(false)}/>}
+    </div>
+  );
+}
+function BalanceModal({eng,sel,month,endBal,onClose}){
+  const me=`${month}-${pad2(new Date(+month.slice(0,4),+month.slice(5,7),0).getDate())}`;
+  const rows=sel.map((id)=>{ const anchor=id==="財布"?(eng.P.walletInit||0):((eng.P.anchor||{})[id]||0); const bal=eng.balanceOf(id,month); return {id,anchor,move:bal-anchor,bal}; });
+  const rs={display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderBottom:`1px solid ${T.lineSoft}`};
+  return (
+    <Modal onClose={onClose} title="月末残高の計算">
+      <div style={{fontSize:12,color:T.sub,marginBottom:10}}>各口座 ＝ アンカー（2026-04-01終値）＋ その後〜{me}の入出金合計</div>
+      {rows.map((r)=>(<div key={r.id} style={{background:T.surface2,borderRadius:8,padding:12,marginBottom:10}}>
+        <div style={{fontWeight:700,marginBottom:6}}><span style={{display:"inline-block",width:8,height:8,borderRadius:8,background:ACCT_COLOR[r.id],marginRight:6}}/>{r.id}</div>
+        <div style={rs}><span style={{color:T.sub}}>アンカー(4/1)</span><span style={{fontFamily:MONO}}>{yen(r.anchor)}</span></div>
+        <div style={rs}><span style={{color:T.sub}}>期間内 入出金</span><span style={{fontFamily:MONO,color:r.move<0?T.clay:T.green}}>{r.move>=0?"+":""}{yen(r.move).replace("¥","¥")}</span></div>
+        <div style={{...rs,borderBottom:"none",fontWeight:700}}><span>= 月末残高</span><span style={{fontFamily:MONO}}>{yen(r.bal)}</span></div>
+      </div>))}
+      <div style={{display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:15,padding:"6px 2px"}}><span>選択口座 合計</span><Num v={endBal} size={16}/></div>
+      <div style={{fontSize:11,color:T.faint,marginTop:8}}>※ 残高は全ての入出金（振替・ATM等も含む・集計フラグに関係なく）を積み上げた値です。</div>
+    </Modal>
+  );
+}
+
+/* ================= P2 明細 ================= */
+const TAGCOL={"収入":[T.green,T.greenSoft],"固定費":[T.sub,T.surface2],"変動費":[T.ink,T.surface2],"返済費":[T.clay,T.claySoft],"カード利用":[T.ink,T.surface2],"カード引落":[T.gold,T.goldSoft],"口座間振替":[T.gold,T.goldSoft],"チャージ":[T.gold,T.goldSoft],"現金移動":[T.gold,T.goldSoft],"残高補正":[T.faint,T.surface2]};
+function P2({eng,mode,ctx,refresh,manual,setManual}){
+  const [filterAcc,setFilterAcc]=useState("all");
+  const [dayFilter,setDayFilter]=useState(ctx&&ctx.date?ctx.date:null);
+  const [detail,setDetail]=useState(null);
+  const [edit,setEdit]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const rows=eng.detailAll
+    .filter((t)=>(filterAcc==="all"?true:t.acctFrom===filterAcc||t.acctTo===filterAcc))
+    .filter((t)=>(dayFilter?t.date===dayFilter:true))
+    .slice().sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:0));
+  const acctLabel=(t)=>(t.inc>0?(t.acctTo||t.to||"-"):(t.acctFrom||t.from||"-"));
+  const manCount=manual.length, manSum=manual.reduce((s,e)=>s+(e.kubun==="収入"?e.amount:-e.amount),0);
+  return (
+    <div>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+          <Eyebrow>明細（実績＝スプシ／予定＝赤・ツール入力）</Eyebrow>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setAdding(true)} style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"#fff",background:T.red,border:"none",borderRadius:8,padding:"7px 10px"}}>＋ 予定</button>
+            <button onClick={refresh} style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"#fff",background:T.greenDeep,border:"none",borderRadius:8,padding:"7px 10px"}}>🔄</button>
+          </div>
+        </div>
+        {manCount>0&&<div style={{marginTop:10,fontSize:12,background:T.redSoft,color:T.red,borderRadius:8,padding:"8px 10px",display:"flex",justifyContent:"space-between"}}><span>予定明細 {manCount}件（合計 {yen(manSum)}）{mode!=="plan"&&"・実績のみ表示中"}</span></div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:12}}>
+          {[{id:"all",name:"全口座"},...ACCOUNTS].map((a)=><button key={a.id} onClick={()=>setFilterAcc(a.id)} style={{cursor:"pointer",fontSize:12,padding:"5px 10px",borderRadius:16,border:`1px solid ${filterAcc===a.id?T.ink:T.line}`,background:filterAcc===a.id?T.ink:T.surface,color:filterAcc===a.id?"#fff":T.sub}}>{a.name}</button>)}
+        </div>
+        {dayFilter&&<div style={{marginTop:10,fontSize:12,color:T.sub}}>日付フィルタ: {dayFilter} <button onClick={()=>setDayFilter(null)} style={{cursor:"pointer",marginLeft:8,border:"none",background:"none",color:T.clay,textDecoration:"underline"}}>解除</button></div>}
+      </Card>
+      <div style={{marginTop:12,display:"grid",gap:8}}>
+        {rows.slice(0,400).map((t,i)=>{const col=t.manual?[T.red,T.redSoft]:(TAGCOL[t.tag]||[T.ink,T.surface2]);const amt=t.inc>0?t.inc:-t.exp;
+          return (<button key={i} onClick={()=>t.manual?setEdit(manual.find((e)=>e.id===t.id)):setDetail(t)} style={{cursor:"pointer",textAlign:"left",background:t.manual?T.redSoft:T.surface,border:`1px solid ${t.manual?T.red+"55":T.line}`,borderRadius:10,padding:"11px 13px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:600,color:t.manual?T.red:T.ink}} className="val">{t.store||t.memo||"(名称なし)"}{t.manual&&RED_TAG}</div>
+              <div style={{fontSize:11,color:T.faint,marginTop:2}} className="val">{(t.date||"").slice(5)}・{acctLabel(t)}・<span style={{color:col[0],background:col[1],borderRadius:4,padding:"0 5px",marginLeft:2}}>{t.tag}</span></div>
+            </div>
+            <Num v={amt} size={15} color={t.manual?T.red:(t.inc>0?T.green:undefined)}/>
+          </button>);
+        })}
+        {rows.length===0&&<div style={{fontSize:13,color:T.sub,textAlign:"center",padding:20}}>該当する明細がありません{mode!=="plan"&&manCount>0?"（予定は『予定込み』表示で反映）":""}</div>}
+        {rows.length>400&&<div style={{fontSize:11,color:T.faint,textAlign:"center",padding:8}}>先頭400件を表示（フィルタで絞り込めます）</div>}
+      </div>
+      {detail&&<DetailModal t={detail} onClose={()=>setDetail(null)}/>}
+      {(adding||edit)&&<ManualModal eng={eng} entry={edit} manual={manual} setManual={setManual} onClose={()=>{setAdding(false);setEdit(null);}}/>}
+    </div>
+  );
+}
+function DetailModal({t,onClose}){
+  const rs={display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderBottom:`1px solid ${T.lineSoft}`,fontSize:13};
+  return (<Modal onClose={onClose} title="明細（読み取り）">
+    <div style={{background:T.surface2,borderRadius:8,padding:12,fontSize:13}}>
+      <div style={rs}><span style={{color:T.sub}}>お店/名称</span><b className="val" style={{textAlign:"right"}}>{t.store||t.memo||"-"}</b></div>
+      <div style={rs}><span style={{color:T.sub}}>金額</span><span style={{fontFamily:MONO,fontWeight:700}}>{yen(t.inc>0?t.inc:-t.exp)}</span></div>
+      <div style={rs}><span style={{color:T.sub}}>区分</span><span>{t.tag}</span></div>
+      <div style={rs}><span style={{color:T.sub}}>支払元 / 入金先</span><span className="val" style={{textAlign:"right"}}>{t.from||"-"} → {t.to||"-"}</span></div>
+      <div style={rs}><span style={{color:T.sub}}>請求年月</span><span>{t.ym}</span></div>
+      <div style={rs}><span style={{color:T.sub}}>請求年月日</span><span>{t.billDate}</span></div>
+      <div style={rs}><span style={{color:T.sub}}>利用日</span><span>{t.useDate}</span></div>
+      <div style={{...rs,borderBottom:"none"}}><span style={{color:T.sub}}>集計</span><span className="val" style={{textAlign:"right"}}>{t.agg||"-"}</span></div>
+    </div>
+    <div style={{fontSize:11,color:T.faint,marginTop:12}}>※ 実績の追加・修正は Zaim/スプシ側で行い「更新」で反映。</div>
+  </Modal>);
+}
+function ManualModal({eng,entry,manual,setManual,onClose}){
+  const e0=entry||{id:"m"+Date.now(),store:"",amount:"",kubun:"変動費",from:"",to:"",billMonth:addMonthStr(curMonthStr(),1),billDate:todayStr(),useDate:todayStr(),include:true};
+  const [f,setF]=useState({...e0,amount:e0.amount===""?"":String(e0.amount)});
+  const [err,setErr]=useState("");
+  const set=(k,v)=>setF((s)=>({...s,[k]:v}));
+  const dl=(id,arr)=><datalist id={id}>{arr.map((x,i)=><option key={i} value={x}/>)}</datalist>;
+  const save=()=>{
+    const amt=Math.abs(Number(f.amount)||0);
+    if(!amt){setErr("金額を入力してください。");return;}
+    if(f.useDate<todayStr()||f.billDate<todayStr()){setErr("過去日は入力できません（利用日・請求年月日は本日以降）。");return;}
+    const rec={id:f.id,store:f.store||f.kubun,amount:amt,kubun:f.kubun,from:f.from,to:f.to,billMonth:f.billMonth,billDate:f.billDate,useDate:f.useDate,include:!!f.include};
+    const idx=manual.findIndex((x)=>x.id===rec.id);
+    const next=idx>=0?manual.map((x)=>x.id===rec.id?rec:x):[...manual,rec];
+    setManual(next); onClose();
+  };
+  const del=()=>{ setManual(manual.filter((x)=>x.id!==f.id)); onClose(); };
+  return (
+    <Modal onClose={onClose} title={entry?"予定明細を編集":"予定明細を追加"}>
+      <div style={{fontSize:12,color:T.red,background:T.redSoft,borderRadius:8,padding:"8px 10px",marginBottom:14}}>ツール上でのみ有効な未来の予定です（スプシには書き込みません）。未来日のみ入力可。</div>
+      <Field label="お店 / 内容（過去から選択・自由入力可）"><input list="dl-store" value={f.store} onChange={(e)=>set("store",e.target.value)} placeholder="例: 家賃" style={inp}/>{dl("dl-store",eng.stores)}</Field>
+      <Field label="金額"><input value={f.amount} onChange={(e)=>set("amount",e.target.value)} inputMode="numeric" placeholder="例: 50000" style={{...inp,fontFamily:MONO}}/></Field>
+      <Field label="区分"><select value={f.kubun} onChange={(e)=>set("kubun",e.target.value)} style={inp}>{KUBUNS.map((k)=><option key={k} value={k}>{k}</option>)}</select></Field>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:1}}><Field label="支払元"><input list="dl-from" value={f.from} onChange={(e)=>set("from",e.target.value)} placeholder="例: 筑波銀行" style={inp}/>{dl("dl-from",eng.froms)}</Field></div>
+        <div style={{flex:1}}><Field label="入金先"><input list="dl-to" value={f.to} onChange={(e)=>set("to",e.target.value)} placeholder="例: dカード" style={inp}/>{dl("dl-to",eng.tos)}</Field></div>
+      </div>
+      <Field label="請求月"><input type="month" min={curMonthStr()} value={f.billMonth} onChange={(e)=>set("billMonth",e.target.value)} style={inp}/></Field>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:1}}><Field label="請求年月日（引落日）"><input type="date" min={todayStr()} value={f.billDate} onChange={(e)=>set("billDate",e.target.value)} style={inp}/></Field></div>
+        <div style={{flex:1}}><Field label="利用日"><input type="date" min={todayStr()} value={f.useDate} onChange={(e)=>set("useDate",e.target.value)} style={inp}/></Field></div>
+      </div>
+      <Field label="集計"><div style={{display:"flex",gap:8}}><Chip on={f.include} onClick={()=>set("include",true)}>含める</Chip><Chip on={!f.include} onClick={()=>set("include",false)}>含めない</Chip></div></Field>
+      {err&&<div style={{fontSize:12,color:T.red,background:T.redSoft,borderRadius:8,padding:10,marginBottom:12}}>{err}</div>}
+      <button onClick={save} style={{...btnPrimary,background:T.red}}>{entry?"保存":"追加"}</button>
+      {entry&&<button onClick={del} style={{width:"100%",marginTop:8,cursor:"pointer",background:"none",border:`1px solid ${T.line}`,borderRadius:10,padding:"10px",fontSize:13,color:T.clay}}>この予定を削除</button>}
+    </Modal>
+  );
+}
+
+/* ================= P3 貯蓄 ================= */
+function P3({eng,mode,go}){
+  const months=eng.months; const [m,setM]=useState(eng.lastGas); const [drill,setDrill]=useState(null);
+  useEffect(()=>{ if(!months.includes(m)) setM(eng.lastGas); },[eng.lastGas]);
+  if(!months.length) return <Empty/>;
+  const mo=eng.monthlyOf(m); const canSave=mo.inc-mo.fixed-mo.variable-mo.repay;
+  const idx=months.indexOf(m); const PREV=months[idx-1];
+  const actual=PREV?eng.balanceOf("ゆうちょ",m)-eng.balanceOf("ゆうちょ",PREV):0;
+  const bd=eng.bdOf(m);
+  const future=m>curMonthStr();
+  const items={
+    "収入":eng.detailAll.filter((it)=>(it.tag==="収入")&& (it.ym===m||ymOf(it.date)===m) && it.inc>0).map((it)=>({name:it.store||it.memo||"収入",amount:it.inc,manual:!!it.manual})),
+    "変動費":bd.filter((b)=>b.kubun==="変動費").map((b)=>({name:b.name,amount:b.amount,manual:!!b.manual})),
+    "固定費":bd.filter((b)=>b.kubun==="固定費").map((b)=>({name:b.name,amount:b.amount,manual:!!b.manual})),
+    "返済費":bd.filter((b)=>b.kubun==="返済費").map((b)=>({name:b.name,amount:b.amount,manual:!!b.manual})),
+  };
+  const rowsFor=(k)=>items[k].sort((a,b)=>b.amount-a.amount);
+  return (
+    <div>
+      {months.length>1&&<div style={{marginBottom:12}}><Eyebrow>表示月</Eyebrow><div style={{marginTop:8}}><MonthChips months={months} value={m} onChange={(x)=>{setM(x);setDrill(null);}}/></div></div>}
+      <Card style={{background:future?T.redSoft:T.greenSoft,borderColor:(future?T.red:T.green)+"55"}}>
+        <Eyebrow>{mLabelY(m)} 貯蓄に回せる額（収入−固定−変動−返済）{future?"／予定込み":""}</Eyebrow>
+        <div style={{margin:"6px 0"}}><Num v={canSave} size={32} color={future?T.red:T.greenDeep}/></div>
+        <div style={{fontSize:13,color:T.sub}}>ゆうちょ増減 {yen(actual)}／差 <span style={{fontFamily:MONO,fontWeight:700,color:canSave-actual>=0?T.green:T.clay}}>{yen(canSave-actual)}</span></div>
+      </Card>
+      <Card style={{marginTop:14}}>
+        <Eyebrow>内訳（タップで明細）</Eyebrow>
+        <div style={{marginTop:12}}>
+          {[["収入",mo.inc,T.green],["変動費",mo.variable,T.ink],["固定費",mo.fixed,T.sub],["返済費",mo.repay,T.clay]].map(([k,v,c])=>(
+            <BarRow key={k} label={k} value={v} max={mo.inc||1} color={c} onClick={()=>setDrill(drill===k?null:k)} right={yen(v)}/>
+          ))}
+        </div>
+        {drill&&(<div style={{marginTop:6,borderTop:`1px solid ${T.lineSoft}`,paddingTop:10}}>
+          <div style={{fontSize:12,color:T.faint,marginBottom:6}}>{drill} の内訳</div>
+          {rowsFor(drill).length?rowsFor(drill).map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"5px 0",color:r.manual?T.red:T.ink}} className="val"><span style={{minWidth:0}}>{r.name}{r.manual&&RED_TAG}</span><span style={{fontFamily:MONO,whiteSpace:"nowrap"}}>{yen(r.amount)}</span></div>):<div style={{fontSize:12,color:T.sub}}>明細なし</div>}
+        </div>)}
+      </Card>
+    </div>
+  );
+}
+
+/* ================= P4 支出分析 ================= */
+function P4({eng,mode}){
+  const [tab,setTab]=useState("what");
+  const months=eng.months; const [m,setM]=useState(eng.lastGas);
+  useEffect(()=>{ if(!months.includes(m)) setM(eng.lastGas); },[eng.lastGas]);
+  if(!months.length) return <Empty/>;
+  const bd=eng.bdOf(m);
+  const grp=(rows,keyFn)=>{const o={};rows.forEach((r)=>{const k=keyFn(r)||"未分類";if(!o[k])o[k]={sum:0,cnt:0,man:false};o[k].sum+=r.amount;o[k].cnt++;if(r.manual)o[k].man=true;});return Object.entries(o).map(([k,v])=>[k,v.sum,v.cnt,v.man]).sort((a,b)=>b[1]-a[1]);};
+  const cats=grp(bd.filter((b)=>b.kubun==="変動費"),(r)=>r.cat);
+  const stores=grp(bd.filter((b)=>b.kubun==="変動費"&&/dカード/.test(b.from||"")),(r)=>r.name);
+  const fixeds=grp(bd.filter((b)=>b.kubun==="固定費"),(r)=>r.name);
+  const repays=grp(bd.filter((b)=>b.kubun==="返済費"),(r)=>r.name);
+  const total=(a)=>a.reduce((s,x)=>s+x[1],0);
+  const mx=(a)=>a[0]?a[0][1]:1;
+  const diffSeries=months.slice(-6).map((mm)=>eng.bdOf(mm).filter((b)=>(b.name||"").indexOf("その他（カード請求差分")>=0).reduce((s,b)=>s+b.amount,0));
+  const tabs=[["what","何を"],["where","どこで"],["fixed","固定費"],["repay","返済費"],["dcard","dカード差分"]];
+  const Sec=({title,data,color})=>(<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><Eyebrow>{mLabelY(m)} {title}</Eyebrow><span style={{fontFamily:MONO,fontWeight:700,color:T.ink}}>計 {yen(total(data))}</span></div>
+    <div style={{marginTop:14}}>{data.length?data.map(([k,v,cnt,man])=><BarRow key={k} label={k} sub={tab==="where"?`${cnt}回`:null} value={v} max={mx(data)} color={man?T.red:color}/>):<div style={{fontSize:13,color:T.sub}}>該当なし</div>}</div></Card>);
+  return (
+    <div>
+      {months.length>1&&<div style={{marginBottom:12}}><Eyebrow>表示月</Eyebrow><div style={{marginTop:8}}><MonthChips months={months} value={m} onChange={setM}/></div></div>}
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
+        {tabs.map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{cursor:"pointer",whiteSpace:"nowrap",fontSize:12,fontWeight:600,padding:"7px 13px",borderRadius:8,border:`1px solid ${tab===v?T.ink:T.line}`,background:tab===v?T.ink:T.surface,color:tab===v?"#fff":T.sub}}>{l}</button>)}
+      </div>
+      {tab==="what"&&<Sec title="何に使ったか（変動費カテゴリ別）" data={cats} color={T.green}/>}
+      {tab==="where"&&<Sec title="どこで（お店別・dカード変動費）" data={stores} color={T.gold}/>}
+      {tab==="fixed"&&<Sec title="固定費" data={fixeds} color={T.sub}/>}
+      {tab==="repay"&&<Sec title="返済費" data={repays} color={T.clay}/>}
+      {tab==="dcard"&&<Card><Eyebrow>dカード差分の推移（実請求 − 利用明細）</Eyebrow><div style={{margin:"8px 0",fontSize:12,color:T.sub}}>手数料・年会費・請求サイクル境界など、利用明細で追えない差。</div><div style={{background:T.surface2,borderRadius:10,padding:10}}><LineChart series={[diffSeries]} labels={months.slice(-6).map(mLabel)} colors={[T.clay]} height={130}/></div><div style={{marginTop:12}}>{months.slice(-6).map((mm,i)=><div key={mm} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${T.lineSoft}`,fontSize:13}}><span>{mLabelY(mm)}</span><span style={{fontFamily:MONO,fontWeight:700,color:Math.abs(diffSeries[i])<1000?T.green:T.clay}}>{yen(diffSeries[i])}</span></div>)}</div></Card>}
+    </div>
+  );
+}
+
+/* ================= P5 借入 ================= */
+function P5({eng,loans,setLoans}){
+  const months=eng.months;
+  const project=(l)=>{let bal=l.balance,mo=0,interest=0;const mr=l.rate/100/12;if(!bal)return{none:true};if(l.monthly<=bal*mr)return{months:Infinity};while(bal>0&&mo<600){const it=bal*mr;interest+=it;bal=bal+it-l.monthly;mo++;}const base=months[months.length-1]||curMonthStr();const d=new Date(+base.slice(0,4),+base.slice(5,7)-1,1);d.setMonth(d.getMonth()+mo);return{months:mo,interest,payoff:`${d.getFullYear()}年${d.getMonth()+1}月`};};
+  const lenders=(eng.P.lenders||[]).map((L)=>{const ov=loans[L.name]||{};return{name:L.name,monthly:L.monthly,balance:ov.balance||0,rate:ov.rate||0};});
+  const results=lenders.map((l)=>({...l,...project(l)}));
+  const totalMonthly=lenders.reduce((s,l)=>s+l.monthly,0),totalBalance=lenders.reduce((s,l)=>s+l.balance,0);
+  const soonest=results.filter((r)=>r.months&&r.months!==Infinity&&r.balance>0).sort((a,b)=>a.months-b.months)[0];
+  const setField=(name,key,val)=>setLoans({...loans,[name]:{...(loans[name]||{}),[key]:Math.max(0,Number(val)||0)}});
+  if(!lenders.length)return <Empty>返済費データがありません（借入返済の明細が取込まれると自動集計されます）。</Empty>;
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Card style={{padding:14}}><Eyebrow>借入残高 合計</Eyebrow><div style={{marginTop:4}}><Num v={-totalBalance} size={18}/></div></Card>
+        <Card style={{padding:14}}><Eyebrow>毎月の返済（実績）</Eyebrow><div style={{marginTop:4}}><Num v={-totalMonthly} size={18}/></div></Card>
+      </div>
+      {soonest&&<Card style={{marginTop:14,background:T.greenSoft,borderColor:T.green+"55"}}><div style={{fontSize:14,color:T.ink}}>次に完済するのは <b>{soonest.name}</b>。<b style={{color:T.greenDeep}}>{soonest.payoff}</b>（あと{soonest.months}ヶ月）。以降 <b style={{color:T.greenDeep}}>毎月{yen(soonest.monthly)}</b> が貯蓄へ。</div></Card>}
+      <div style={{marginTop:14,display:"grid",gap:10}}>
+        {results.map((r)=>(<Card key={r.name} style={{padding:15}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}><div style={{fontSize:15,fontWeight:700,color:T.ink}} className="val">{r.name}</div><div style={{fontSize:12,color:T.faint,whiteSpace:"nowrap"}}>月{yen(r.monthly)}（実績）</div></div>
+          <div style={{display:"flex",gap:8,alignItems:"center",margin:"12px 0 6px"}}>
+            <span style={{fontSize:12,color:T.sub,whiteSpace:"nowrap"}}>現在残高</span><input value={r.balance||""} onChange={(e)=>setField(r.name,"balance",e.target.value)} inputMode="numeric" placeholder="残高" style={{...inp,fontFamily:MONO,marginBottom:0,flex:1,minWidth:0}}/>
+            <span style={{fontSize:12,color:T.sub,whiteSpace:"nowrap"}}>金利%</span><input value={r.rate||""} onChange={(e)=>setField(r.name,"rate",e.target.value)} inputMode="decimal" placeholder="年利" style={{...inp,fontFamily:MONO,marginBottom:0,width:58}}/>
+          </div>
+          {r.none?<div style={{fontSize:12,color:T.faint}}>残高を入力すると完済予定を計算します。</div>:r.months===Infinity?<div style={{fontSize:13,color:T.clay,background:T.claySoft,borderRadius:8,padding:10}}>返済額が利息を下回り完済できません。</div>:<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginTop:4,gap:8}}><span style={{color:T.sub}}>完済 <b style={{color:T.greenDeep}}>{r.payoff}</b>（あと{r.months}ヶ月）</span><span style={{color:T.sub,whiteSpace:"nowrap"}}>利息 <span style={{fontFamily:MONO,color:T.clay}}>{yen(r.interest)}</span></span></div>}
+        </Card>))}
+      </div>
+    </div>
+  );
+}
+
+function Empty({children}){return <Card><div style={{textAlign:"center",padding:24,color:T.sub}}><div style={{fontSize:30}}>📄</div><div style={{marginTop:8,fontSize:14}}>{children||"データがありません。右上「設定」でWebアプリURLを設定してください。"}</div></div></Card>;}
+
+/* ------------- 予定サマリー / 設定 ------------- */
+function ManagerModal({manual,setManual,onEdit,onClose}){
+  const byK={}; manual.forEach((e)=>{const k=e.kubun;byK[k]=(byK[k]||0)+(e.kubun==="収入"?e.amount:-e.amount);});
+  return (<Modal onClose={onClose} title={`予定明細（${manual.length}件）`}>
+    {manual.length===0?<div style={{fontSize:13,color:T.sub}}>予定はありません。明細ページの「＋予定」から追加できます。</div>:(<>
+      <div style={{background:T.surface2,borderRadius:8,padding:12,marginBottom:12}}>{Object.entries(byK).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}><span>{k}</span><span style={{fontFamily:MONO,color:v<0?T.clay:T.green}}>{yen(v)}</span></div>)}</div>
+      <div style={{display:"grid",gap:8}}>{manual.slice().sort((a,b)=>a.billMonth<b.billMonth?-1:1).map((e)=><button key={e.id} onClick={()=>onEdit(e)} style={{textAlign:"left",cursor:"pointer",background:T.redSoft,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",gap:10}}><div style={{minWidth:0}} className="val"><div style={{fontSize:14,fontWeight:600,color:T.red}}>{e.store||e.kubun}</div><div style={{fontSize:11,color:T.faint,marginTop:2}}>{e.billMonth}・{e.kubun}・{e.from||"-"}→{e.to||"-"}{e.include?"":"・集計外"}</div></div><span style={{fontFamily:MONO,color:T.red,whiteSpace:"nowrap"}}>{yen(e.kubun==="収入"?e.amount:-e.amount)}</span></button>)}</div>
+    </>)}
+  </Modal>);
+}
+function SettingsModal({url,onSave,onClose,hasData}){
+  const [v,setV]=useState(url||"");
+  return (<Modal onClose={hasData?onClose:undefined} title="接続設定（Webアプリ URL）">
+    <div style={{fontSize:13,color:T.sub,marginBottom:12,lineHeight:1.7}}>取込パイプラインGASを<b>ウェブアプリ</b>としてデプロイ（実行=自分／アクセス=全員）し、<b>/exec</b> で終わるURLを貼り付けてください。</div>
+    <input value={v} onChange={(e)=>setV(e.target.value)} placeholder="https://script.google.com/macros/s/……/exec" style={{...inp,fontFamily:MONO,fontSize:12}}/>
+    <button onClick={()=>v.trim()&&onSave(v.trim())} disabled={!v.trim()} style={{...btnPrimary,opacity:v.trim()?1:0.5}}>保存して取得</button>
+    <div style={{fontSize:11,color:T.faint,marginTop:12}}>※ 先にGASで「取込＆集計を実行」。数字はGAS集計をそのまま表示（実績は再計算なし）。</div>
+  </Modal>);
+}
+
+/* ================= App ================= */
+const NAV=[["p0","全資産"],["p1","収支管理"],["p2","明細"],["p3","貯蓄"],["p4","支出分析"],["p5","借入"]];
+function App(){
+  const [url,setUrl]=useState(()=>localStorage.getItem(LS_URL)||"");
+  const [payload,setPayload]=useState(null);
+  const [status,setStatus]=useState("init"); const [err,setErr]=useState("");
+  const [loans,setLoans]=useState(()=>{try{return JSON.parse(localStorage.getItem(LS_LOANS)||"{}");}catch(e){return{};}});
+  const [manual,setManualState]=useState(()=>{try{return JSON.parse(localStorage.getItem(LS_MANUAL)||"[]");}catch(e){return[];}});
+  const [mode,setMode]=useState(()=>localStorage.getItem(LS_MODE)||"actual");
+  const [page,setPage]=useState("p0"); const [ctx,setCtx]=useState({});
+  const [showSettings,setShowSettings]=useState(false); const [showMgr,setShowMgr]=useState(false); const [mgrEdit,setMgrEdit]=useState(null);
+  const go=useCallback((pg,c={})=>{setCtx(c);setPage(pg);window.scrollTo(0,0);},[]);
+  const setManual=(next)=>{setManualState(next);localStorage.setItem(LS_MANUAL,JSON.stringify(next));};
+  useEffect(()=>{localStorage.setItem(LS_LOANS,JSON.stringify(loans));},[loans]);
+  useEffect(()=>{localStorage.setItem(LS_MODE,mode);},[mode]);
+  const eng=useEngine(payload,manual,mode);
+
+  const load=useCallback(async(u)=>{const target=u||url;if(!target){setShowSettings(true);setStatus("error");setErr("Webアプリ URL が未設定です。");return;}setStatus("loading");setErr("");
+    try{const res=await fetch(target,{redirect:"follow"});const text=await res.text();let j;try{j=JSON.parse(text);}catch(e){throw new Error("JSONを解析できません（URLが/execか・アクセスが全員か確認）。");}if(!j.ok)throw new Error(j.error||"取得失敗");setPayload(j);setStatus("ok");try{localStorage.setItem(LS_CACHE,JSON.stringify(j));}catch(e){}}
+    catch(ex){setErr(String(ex.message||ex));setStatus("error");try{const c=localStorage.getItem(LS_CACHE);if(c)setPayload((prev)=>prev||JSON.parse(c));}catch(e){}}
+  },[url]);
+  useEffect(()=>{if(url)load(url);else{setShowSettings(true);setStatus("error");}},[]);
+  const saveUrl=(u)=>{localStorage.setItem(LS_URL,u);setUrl(u);setShowSettings(false);load(u);};
+  const ready=payload&&payload.ok;
+
+  return (
+    <div style={{fontFamily:SANS,background:T.bg,minHeight:"100vh",color:T.ink}}>
+      <div style={{maxWidth:460,margin:"0 auto",width:"100%",padding:"0 0 96px"}}>
+        <header style={{padding:"18px 16px 8px",display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:8}}>
+          <div style={{minWidth:0}}><div style={{fontSize:11,letterSpacing:3,color:T.green,fontWeight:700}}>KAKEIBO</div><div style={{fontSize:19,fontWeight:800,letterSpacing:-0.5}} className="val">元帳ベース家計簿</div></div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <button onClick={()=>load()} style={{cursor:"pointer",fontSize:11,color:T.green,background:"none",border:`1px solid ${T.green}55`,borderRadius:6,padding:"4px 9px",fontWeight:700}}>{status==="loading"?"取得中":"更新"}</button>
+            <button onClick={()=>setShowSettings(true)} style={{cursor:"pointer",fontSize:11,color:T.faint,background:"none",border:`1px solid ${T.line}`,borderRadius:6,padding:"4px 9px"}}>設定</button>
+          </div>
+        </header>
+
+        <div style={{padding:"0 16px",display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+          <div style={{display:"flex",background:T.ink10,borderRadius:9,padding:2}}>
+            {[["actual","実績のみ"],["plan","予定込み"]].map(([v,l])=><button key={v} onClick={()=>setMode(v)} style={{cursor:"pointer",fontSize:12,fontWeight:700,border:"none",borderRadius:7,padding:"6px 12px",background:mode===v?(v==="plan"?T.red:T.surface):"transparent",color:mode===v?(v==="plan"?"#fff":T.ink):T.sub}}>{l}</button>)}
+          </div>
+          <button onClick={()=>setShowMgr(true)} style={{cursor:"pointer",fontSize:11,color:manual.length?T.red:T.faint,background:manual.length?T.redSoft:"none",border:`1px solid ${manual.length?T.red+"55":T.line}`,borderRadius:7,padding:"6px 10px",fontWeight:600}}>予定 {manual.length}件</button>
+        </div>
+
+        <main style={{padding:"0 16px"}}>
+          {status==="loading"&&!ready&&<Card><div style={{textAlign:"center",padding:24,color:T.sub}}>データ取得中…</div></Card>}
+          {status==="error"&&err&&<div style={{margin:"0 0 12px",fontSize:12,color:T.clay,background:T.claySoft,borderRadius:10,padding:12}}>取得エラー：{err}{payload?"（前回取得分を表示中）":""}</div>}
+          {!ready&&status!=="loading"&&!payload&&<Empty/>}
+          {ready&&(<>
+            {page==="p0"&&<P0 eng={eng} mode={mode} go={go}/>}
+            {page==="p1"&&<P1 eng={eng} mode={mode} ctx={ctx}/>}
+            {page==="p2"&&<P2 eng={eng} mode={mode} ctx={ctx} refresh={()=>load()} manual={manual} setManual={setManual}/>}
+            {page==="p3"&&<P3 eng={eng} mode={mode} go={go}/>}
+            {page==="p4"&&<P4 eng={eng} mode={mode}/>}
+            {page==="p5"&&<P5 eng={eng} loans={loans} setLoans={setLoans}/>}
+          </>)}
+          {ready&&payload.generatedAt&&<div style={{fontSize:10,color:T.faint,textAlign:"center",marginTop:16}}>集計時刻 {new Date(payload.generatedAt).toLocaleString("ja-JP")}{mode==="plan"?"・予定込み表示":""}</div>}
+        </main>
+      </div>
+      <nav style={{position:"fixed",bottom:0,left:0,right:0,background:T.surface,borderTop:`1px solid ${T.line}`,display:"flex",justifyContent:"center",zIndex:40}}>
+        <div style={{display:"flex",width:"100%",maxWidth:460}}>
+          {NAV.map(([pg,l])=><button key={pg} onClick={()=>go(pg)} style={{flex:1,cursor:"pointer",border:"none",background:"none",padding:"9px 2px 11px",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}><span style={{width:5,height:5,borderRadius:5,background:page===pg?T.greenDeep:"transparent"}}/><span style={{fontSize:11,fontWeight:page===pg?700:500,color:page===pg?T.greenDeep:T.faint}}>{l}</span></button>)}
+        </div>
+      </nav>
+      {showSettings&&<SettingsModal url={url} onSave={saveUrl} onClose={()=>setShowSettings(false)} hasData={ready}/>}
+      {showMgr&&<ManagerModal manual={manual} setManual={setManual} onEdit={(e)=>{setShowMgr(false);setMgrEdit(e);}} onClose={()=>setShowMgr(false)}/>}
+      {mgrEdit&&<ManualModal eng={eng} entry={mgrEdit} manual={manual} setManual={setManual} onClose={()=>setMgrEdit(null)}/>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
